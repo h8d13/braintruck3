@@ -9,4 +9,3 @@ Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign (-1 / 0 / +1
 `:` and `;` do trit-string I/O ("+0-" alphabet)
 
 `+ - > < [ ] . ,` unchanged.
-
