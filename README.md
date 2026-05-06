@@ -6,6 +6,6 @@ Kept dense as `int8_t` in a `std::vector<Cell>` tape.
 
 Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign (-1 / 0 / +1).
 
-`:` and `;` do trit-string I/O (usning "+0-" alphabet)
+`:` and `;` do trit-string I/O (using "+0-" alphabet)
 
 `+ - > < [ ] . ,` unchanged.

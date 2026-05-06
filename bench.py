@@ -80,6 +80,14 @@ tests = {
         '+ * * + * * .\n' * 50000,
     'div3-chain N=80000':     # 2 DIV3 per iter, large initial value
         '+++++++++++ / / .\n' * 80000,
+    # JIT DIV3 microbench: 121x121xM `*/` pairs in a nested counter loop,
+    # single trailing PUTC.  No I/O in the hot path, so codegen latency
+    # of DIV3 dominates wall time (idiv vs imul-magic shows clearly).
+    'div3-loop M=2000':
+        '++++ >' + '+' * 121 +
+        ' [- >' + '+' * 121 +
+        ' [- <<' + '*/' * 2000 +
+        '>> ] < ] .',
 }
 
 if not os.path.exists(OLD):

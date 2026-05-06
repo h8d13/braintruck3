@@ -21,7 +21,7 @@ extern "C" std::int8_t btf_jit_getc() {
 }
 
 namespace {
-constexpr std::size_t CODE_CAP = 16 * 1024 * 1024;  // 16 MB
+constexpr std::size_t CODE_CAP = 128 * 1024 * 1024; // 128 MB; mmap is lazy
 }
 
 BtfJit::BtfJit() : code_(nullptr), code_cap_(CODE_CAP), code_pos_(0) {
@@ -67,9 +67,10 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
         throw std::runtime_error("BtfJit: mprotect rw failed");
     }
 
-    // Bounds-check up front: the worst-case per-op size is ~64 bytes; we
-    // already reserved 16 MB.  Skip per-byte cap checks in the hot path.
-    if (ops.size() * 80 + 256 > code_cap_)
+    // Bounds-check up front: actual worst-case per-op is ~40 bytes
+    // (MOVE_ADD/SUB: load+load+add+mov+wrap+store+set ≈ 39).  48 leaves
+    // headroom; skip per-byte cap checks in the hot path.
+    if (ops.size() * 48 + 256 > code_cap_)
         throw std::runtime_error("BtfJit: IR too large for code buffer");
     auto emit_b   = [&](std::uint8_t b) { code_[code_pos_++] = b; };
     auto emit_w32 = [&](std::uint32_t v) {
@@ -194,11 +195,21 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
                 break;
             }
             case Op::DIV3: {
+                // Magic-number signed /3 for cell range [-121, 121].
+                //   imul eax, eax, 86      ; |n*86| <= 10406, fits int16
+                //   mov  ecx, eax
+                //   shr  ecx, 31           ; ecx = sign bit of n*86
+                //   sar  eax, 8            ; floor(n*86 / 256)
+                //   add  eax, ecx          ; floor + (n<0) = trunc(n/3)
+                // Correct iff n*86 is never a multiple of 256 for n != 0:
+                // gcd(86,256)=2, so 256 | n*86 requires 128 | n; |n|<=121
+                // rules that out.  Beats `idiv ecx` (~20cyc) by ~3-4x latency.
                 load_eax_cell();
-                emit({0xB9, 0x03, 0x00, 0x00, 0x00});  // mov ecx, 3
-                emit_b(0x99);                            // cdq
-                emit({0xF7, 0xF9});                       // idiv ecx
-                // Result in eax, range fits cell; no wrap needed.
+                emit({0x6B, 0xC0, 0x56});  // imul eax, eax, 86
+                emit({0x89, 0xC1});        // mov  ecx, eax
+                emit({0xC1, 0xE9, 0x1F});  // shr  ecx, 31
+                emit({0xC1, 0xF8, 0x08});  // sar  eax, 8
+                emit({0x01, 0xC8});        // add  eax, ecx
                 store_al_cell();
                 break;
             }
