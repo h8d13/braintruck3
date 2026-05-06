@@ -71,7 +71,7 @@ tests = {
     'star-loop N=50000':
         '+++[*].\n' * 50000,
 
-    # ---- JIT-favoring (MUL3/DIV3-heavy; survive the const-fold pipeline) ----
+    # JIT-favoring (MUL3/DIV3-heavy; survive the const-fold pipeline)
     # `+` between `*` ops prevents fold-into-SET, so MUL3 stays in IR for runtime.
     # These are where BTF_JIT=1 actually engages.
     'mul3-x2 N=100000':       # 2 MUL3 per iter

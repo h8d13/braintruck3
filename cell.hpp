@@ -35,10 +35,11 @@ public:
     std::string trits() const;
     static Cell from_trits(const std::string& s);
 
-    // Fast path: range-check via unsigned reinterpretation (one cmp).
+    // Range-check via unsigned reinterpretation (one cmp).
     // Hot inputs (cell ± 1, cell × 3) all fit in |x| <= MAX + MOD, so a
-    // single ±MOD adjustment after that branch suffices.  Falls back to
-    // the general formula for the rare large-arg case.
+    // single ±MOD adjustment after that branch suffices.
+    // Falls back to the general formula for large-arg case.
+
     static constexpr storage_t wrap(wide_t x) {
         if (static_cast<std::uint32_t>(x + MAX_VAL) <=
             static_cast<std::uint32_t>(2 * MAX_VAL)) {

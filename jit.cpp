@@ -9,8 +9,8 @@
 #include <cstdint>
 #include <cstdlib>
 
-// ===== Runtime helpers callable from JIT'd code (extern "C" so the symbol
-// is reachable via raw absolute call from emitted machine code). ============
+// Runtime helpers callable from JIT'd code (extern "C" so the symbol
+// is reachable via raw absolute call from emitted machine code)
 
 extern "C" void btf_jit_putc(std::int8_t c) {
     std::cout.put(static_cast<char>(static_cast<unsigned char>(c)));
@@ -19,8 +19,6 @@ extern "C" std::int8_t btf_jit_getc() {
     int ch = std::cin.get();
     return Cell(ch == EOF ? 0 : ch).value();
 }
-
-// ===== JIT impl ============================================================
 
 namespace {
 constexpr std::size_t CODE_CAP = 16 * 1024 * 1024;  // 16 MB
@@ -94,7 +92,7 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
         code_[at+3] = (u >> 24) & 0xFF;
     };
 
-    // ---- byte-level helpers for common addressing patterns -----------------
+    // byte-level helpers for common addressing patterns
     // movsx eax, byte [rbp]                : 0F BE 45 00
     auto load_eax_cell  = [&]{ emit({0x0F, 0xBE, 0x45, 0x00}); };
     // mov   [rbp], al                       : 88 45 00
@@ -155,7 +153,7 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
         emit({0xFF, 0xD0});
     };
 
-    // ---- prologue / epilogue ----------------------------------------------
+    // prologue / epilogue
     //   push rbx           53
     //   push rbp           55
     //   mov rbx, rdi       48 89 FB
