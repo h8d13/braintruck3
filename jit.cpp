@@ -8,6 +8,8 @@
 #include <cstring>
 #include <cstdint>
 #include <cstdlib>
+#include <array>
+#include <cassert>
 
 // Runtime helpers callable from JIT'd code (extern "C" so the symbol
 // is reachable via raw absolute call from emitted machine code)
@@ -15,13 +17,20 @@
 extern "C" void btf_jit_putc(std::int8_t c) {
     std::cout.put(static_cast<char>(static_cast<unsigned char>(c)));
 }
-extern "C" std::int8_t btf_jit_getc() {
-    int ch = std::cin.get();
-    return Cell(ch == EOF ? 0 : ch).value();
-}
 
 namespace {
 constexpr std::size_t CODE_CAP = 128 * 1024 * 1024; // 128 MB; mmap is lazy
+
+// LUT keyed by raw int8 cell value (re-read as uint8 index).  Pre-encodes
+// trunc-toward-zero signed /3 for the full 256-entry domain; cells stay in
+// [-121, 121] but filling all 256 keeps the lookup unconditional.
+constexpr auto make_div3_lut() {
+    std::array<std::int8_t, 256> a{};
+    for (int i = 0; i < 256; ++i)
+        a[i] = static_cast<std::int8_t>(static_cast<std::int8_t>(i) / 3);
+    return a;
+}
+constexpr auto btf_div3_lut = make_div3_lut();
 }
 
 BtfJit::BtfJit() : code_(nullptr), code_cap_(CODE_CAP), code_pos_(0) {
@@ -41,16 +50,18 @@ BtfJit::~BtfJit() {
 }
 
 bool BtfJit::can_compile(const std::vector<Op>& ops) {
-    // Two requirements:
-    //   1. No unsupported ops (SCAN/SIGN/trit-I/O   interp wins on these).
-    //   2. At least one MUL3 or DIV3   these are the ternary primitives where
-    //      JIT actually pays off.  Without them the program is BF-equivalent
-    //      and our interp matches or beats JIT (no codegen amortization).
+    // JIT exists to accelerate MUL3/DIV3.  We reject:
+    //   - SCAN/SIGN/trit-I/O: interp wins (memchr SIMD, complex codegen).
+    //   - peephole-fused drains (MOVE_ADD/SUB, ADD_AT/SUB_AT): no MUL3/DIV3
+    //     content; JIT'ing them yields no speedup over interp.
+    // Require at least one MUL3 or DIV3 so codegen overhead amortizes.
     bool has_arith = false;
     for (const Op& op : ops) {
         switch (op.kind) {
             case Op::SCAN: case Op::SIGN:
-            case Op::PUTTR: case Op::GETTR:
+            case Op::PUTTR: case Op::GETTR: case Op::GETC:
+            case Op::MOVE_ADD: case Op::MOVE_SUB:
+            case Op::ADD_AT:   case Op::SUB_AT:
                 return false;
             case Op::MUL3: case Op::DIV3:
                 has_arith = true;
@@ -67,10 +78,10 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
         throw std::runtime_error("BtfJit: mprotect rw failed");
     }
 
-    // Bounds-check up front: actual worst-case per-op is ~40 bytes
-    // (MOVE_ADD/SUB: load+load+add+mov+wrap+store+set ≈ 39).  48 leaves
-    // headroom; skip per-byte cap checks in the hot path.
-    if (ops.size() * 48 + 256 > code_cap_)
+    // Bounds-check up front: actual worst-case per-op is ~30 bytes
+    // (ADD/MUL3 wrap_eax sequence + load/store).  Skip per-byte checks
+    // in the hot path.
+    if (ops.size() * 32 + 256 > code_cap_)
         throw std::runtime_error("BtfJit: IR too large for code buffer");
     auto emit_b   = [&](std::uint8_t b) { code_[code_pos_++] = b; };
     auto emit_w32 = [&](std::uint32_t v) {
@@ -103,32 +114,6 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
         emit({0xC6, 0x45, 0x00, static_cast<std::uint8_t>(v)});
     };
 
-    // movsx <reg>, byte [rbp + d]   reg encoded in ModR/M
-    //   reg=0 (eax): 0F BE 45/85
-    //   reg=1 (ecx): 0F BE 4D/8D
-    //   reg=7 (edi): 0F BE 7D/BD
-    auto load_reg_off = [&](std::uint8_t reg, std::int32_t d) {
-        emit({0x0F, 0xBE});
-        if (d >= -128 && d <= 127) {
-            emit_b(0x40 | (reg << 3) | 0x05);                  // mod=01, r/m=5
-            emit_b(static_cast<std::uint8_t>(d));
-        } else {
-            emit_b(0x80 | (reg << 3) | 0x05);                  // mod=10, r/m=5
-            emit_w32(static_cast<std::uint32_t>(d));
-        }
-    };
-    // mov [rbp+d], al                : 88 (mod r/m for [rbp+disp]) ; src reg = 0
-    auto store_al_off = [&](std::int32_t d) {
-        emit_b(0x88);
-        if (d >= -128 && d <= 127) {
-            emit_b(0x45);
-            emit_b(static_cast<std::uint8_t>(d));
-        } else {
-            emit_b(0x85);
-            emit_w32(static_cast<std::uint32_t>(d));
-        }
-    };
-
     // Branchful balanced-ternary wrap of eax (assumes |eax| <= MAX + MOD).
     //   cmp eax, 121         ; 83 F8 79
     //   jle .neg_check       ; 7E 05
@@ -155,16 +140,22 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
     };
 
     // prologue / epilogue
-    //   push rbx           53
-    //   push rbp           55
-    //   mov rbx, rdi       48 89 FB
-    //   mov rbp, rdi       48 89 FD     (rbp = tape base; p starts at 0)
-    emit({0x53, 0x55, 0x48, 0x89, 0xFB, 0x48, 0x89, 0xFD});
+    //   push rbx                 53
+    //   push rbp                 55
+    //   movabs rbx, &lut         48 BB <imm64>     (rbx = DIV3 LUT base)
+    //   mov rbp, rdi             48 89 FD          (rbp = tape base; p=0)
+    emit({0x53, 0x55, 0x48, 0xBB});
+    emit_w64(reinterpret_cast<std::uint64_t>(btf_div3_lut.data()));
+    emit({0x48, 0x89, 0xFD});
 
     // Bracket-matching state for JZ/JNZ patching.
     std::vector<std::size_t> bracket_jz_patch;
 
     for (const Op& op : ops) {
+        // Debug guard: catch a per-op-budget regression cheaply.  The 32 in
+        // the up-front cap was empirically derived; if any op exceeds it
+        // this assert trips before we walk off the buffer.
+        [[maybe_unused]] std::size_t pos_before = code_pos_;
         switch (op.kind) {
             case Op::ADD: {
                 // Pre-wrap k mod 243 (balanced) so |k| <= 121 ==> imm8 fits.
@@ -195,21 +186,13 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
                 break;
             }
             case Op::DIV3: {
-                // Magic-number signed /3 for cell range [-121, 121].
-                //   imul eax, eax, 86      ; |n*86| <= 10406, fits int16
-                //   mov  ecx, eax
-                //   shr  ecx, 31           ; ecx = sign bit of n*86
-                //   sar  eax, 8            ; floor(n*86 / 256)
-                //   add  eax, ecx          ; floor + (n<0) = trunc(n/3)
-                // Correct iff n*86 is never a multiple of 256 for n != 0:
-                // gcd(86,256)=2, so 256 | n*86 requires 128 | n; |n|<=121
-                // rules that out.  Beats `idiv ecx` (~20cyc) by ~3-4x latency.
-                load_eax_cell();
-                emit({0x6B, 0xC0, 0x56});  // imul eax, eax, 86
-                emit({0x89, 0xC1});        // mov  ecx, eax
-                emit({0xC1, 0xE9, 0x1F});  // shr  ecx, 31
-                emit({0xC1, 0xF8, 0x08});  // sar  eax, 8
-                emit({0x01, 0xC8});        // add  eax, ecx
+                // 256-entry LUT keyed by raw int8 cell.  rbx holds LUT base
+                // (set in prologue).  10 bytes, 3 uops, ~10 cyc dep chain.
+                //   movzx eax, byte [rbp]      ; cell as uint8 in eax
+                //   mov   al,  [rbx + rax]     ; LUT[cell] = trunc(cell/3)
+                //   mov   [rbp], al
+                emit({0x0F, 0xB6, 0x45, 0x00});  // movzx eax, byte [rbp]
+                emit({0x8A, 0x04, 0x03});        // mov al, [rbx + rax]
                 store_al_cell();
                 break;
             }
@@ -221,11 +204,6 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
             case Op::PUTC: {
                 emit({0x0F, 0xBE, 0x7D, 0x00});           // movsx edi, byte [rbp]
                 call_abs(reinterpret_cast<void*>(&btf_jit_putc));
-                break;
-            }
-            case Op::GETC: {
-                call_abs(reinterpret_cast<void*>(&btf_jit_getc));
-                store_al_cell();                          // helper returned int8 in al
                 break;
             }
             case Op::JZ: {
@@ -253,52 +231,12 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
                 patch32(je_patch, fwd);
                 break;
             }
-            case Op::MOVE_ADD: {
-                // tape[p+d] += cell; cell = 0
-                std::int32_t d = op.arg;
-                load_eax_cell();                          // eax = cell
-                load_reg_off(1, d);                       // ecx = tape[p+d]
-                emit({0x01, 0xC1});                       // add ecx, eax
-                emit({0x89, 0xC8});                       // mov eax, ecx
-                wrap_eax();
-                store_al_off(d);
-                store_imm_cell(0);
-                break;
-            }
-            case Op::MOVE_SUB: {
-                std::int32_t d = op.arg;
-                load_reg_off(1, d);                       // ecx = tape[p+d]
-                load_eax_cell();                          // eax = cell
-                emit({0x29, 0xC1});                       // sub ecx, eax
-                emit({0x89, 0xC8});                       // mov eax, ecx
-                wrap_eax();
-                store_al_off(d);
-                store_imm_cell(0);
-                break;
-            }
-            case Op::ADD_AT: {
-                std::int32_t d = op.arg;
-                load_eax_cell();
-                load_reg_off(1, d);
-                emit({0x01, 0xC1});
-                emit({0x89, 0xC8});
-                wrap_eax();
-                store_al_off(d);
-                break;
-            }
-            case Op::SUB_AT: {
-                std::int32_t d = op.arg;
-                load_reg_off(1, d);
-                load_eax_cell();
-                emit({0x29, 0xC1});
-                emit({0x89, 0xC8});
-                wrap_eax();
-                store_al_off(d);
-                break;
-            }
-            // SIGN/PUTTR/GETTR/SCAN gated by can_compile(); unreachable.
+            // SCAN/SIGN/PUTTR/GETTR/GETC + MOVE_ADD/SUB/ADD_AT/SUB_AT all
+            // gated out by can_compile(); unreachable here.
             default: __builtin_unreachable();
         }
+        assert(code_pos_ - pos_before <= 32 && "JIT op exceeded per-op budget");
+        assert(code_pos_ < code_cap_ && "JIT walked off code buffer");
     }
 
     if (!bracket_jz_patch.empty())

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <stack>
 #include <cstdint>
@@ -13,7 +14,7 @@
 
 using ptr_t = std::size_t;
 
-constexpr ptr_t TAPE_SIZE = 9999;
+constexpr ptr_t DEFAULT_TAPE_SIZE = 9999;
 
 // Compiled IR.  ADD/MOVE collapse runs of +/-/>/< into a single signed
 // delta.  JZ/JNZ store their matching op index directly in `arg`, so
@@ -212,8 +213,8 @@ static inline void exec_getc(Cell& c) {
 // with NEXT() which jumps directly to the next op's handler   no shared
 // dispatch loop, fewer pipeline bubbles, branch predictor learns per-handler
 // successor patterns.  Order of `table` MUST match the Op::Kind enum.
-static int run(const std::vector<Op>& ops) {
-    std::vector<Cell> tape_vec(TAPE_SIZE);
+static int run(const std::vector<Op>& ops, ptr_t tape_size) {
+    std::vector<Cell> tape_vec(tape_size);
     Cell* const tape = tape_vec.data();      // raw pointer: no operator[] indirection
     const Op* const op = ops.data();         // same for the IR
     const std::size_t n = ops.size();
@@ -267,8 +268,8 @@ op_scan: {
     if (d == 1) {
         const std::int8_t* base = reinterpret_cast<const std::int8_t*>(tape);
         const std::int8_t* hit = static_cast<const std::int8_t*>(
-            std::memchr(base + p, 0, TAPE_SIZE - p));
-        p = hit ? static_cast<ptr_t>(hit - base) : TAPE_SIZE - 1;
+            std::memchr(base + p, 0, tape_size - p));
+        p = hit ? static_cast<ptr_t>(hit - base) : tape_size - 1;
     } else if (d == -1) {
 #ifdef __GLIBC__
         const std::int8_t* base = reinterpret_cast<const std::int8_t*>(tape);
@@ -288,13 +289,32 @@ op_scan: {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "usage: " << argv[0] << " <program.btf>\n";
-        return 1;
+    ptr_t tape_size = DEFAULT_TAPE_SIZE;
+    const char* prog_path = nullptr;
+
+    auto usage = [&]{
+        std::cerr << "usage: " << argv[0] << " [-t N] <program.btf>\n"
+                  << "  -t N   tape size in cells (default "
+                  << DEFAULT_TAPE_SIZE << ")\n";
+    };
+
+    for (int i = 1; i < argc; ++i) {
+        std::string_view a = argv[i];
+        if (a == "-t" && i + 1 < argc) {
+            tape_size = static_cast<ptr_t>(std::strtoul(argv[++i], nullptr, 10));
+            if (tape_size == 0) { usage(); return 1; }
+        } else if (!prog_path && !a.empty() && a[0] != '-') {
+            prog_path = argv[i];
+        } else {
+            usage();
+            return 1;
+        }
     }
-    std::ifstream f(argv[1]);
+    if (!prog_path) { usage(); return 1; }
+
+    std::ifstream f(prog_path);
     if (!f) {
-        std::cerr << "cannot open " << argv[1] << '\n';
+        std::cerr << "cannot open " << prog_path << '\n';
         return 1;
     }
     std::string raw{std::istreambuf_iterator<char>(f), {}};
@@ -315,7 +335,7 @@ int main(int argc, char* argv[]) {
             try {
                 BtfJit jit;
                 auto fn = jit.compile(ops);
-                std::vector<std::int8_t> tape(TAPE_SIZE, 0);
+                std::vector<std::int8_t> tape(tape_size, 0);
                 fn(tape.data());
                 return 0;
             } catch (const std::exception& e) {
@@ -326,5 +346,5 @@ int main(int argc, char* argv[]) {
         // Fall through to interpreter for unsupported ops.
     }
 
-    return run(ops);
+    return run(ops, tape_size);
 }
