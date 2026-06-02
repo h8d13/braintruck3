@@ -35,6 +35,6 @@ public:
 
 private:
     std::uint8_t* code_;
-    std::size_t   code_cap_;
+    std::size_t   code_cap_;    // bytes currently mapped (0 = none)
     std::size_t   code_pos_;
 };

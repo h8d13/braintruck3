@@ -1,41 +1,50 @@
 #!/usr/bin/env python3
-"""A/B bench against a snapshot binary.
+"""btf benchmark harness.  Two modes:
 
-Usage:
+  A/B (default): new build vs a saved snapshot binary, both interpreter.
     cp out/btf out/btf_<tag>          # save baseline before edit
     # edit code, ./build.sh
-    ./bench.py out/btf_<tag>          # compare new vs snapshot
+    bench/bench.py out/btf_<tag>      # compare new vs snapshot
 
-Reports min wall time over RUNS samples and (optionally) callgrind Ir.
+  --jit: interpreter vs JIT on the *same* current build (no snapshot).
+    bench/bench.py --jit             # BTF_JIT off vs BTF_JIT=1
+
+Add --ir to measure callgrind instruction counts instead of wall time.
+Paths resolve from this file, so it runs from any cwd.
 """
 
-import os, subprocess, sys, time, tempfile, shutil
+import os, subprocess, sys, time, tempfile
 
-NEW  = './out/btf'
-TMP  = 'tmp_bench'
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+NEW  = os.path.join(ROOT, 'out', 'btf')
+TMP  = os.path.join(ROOT, 'tmp_bench')
 RUNS = 15
-USE_CALLGRIND = '--ir' in sys.argv
+USE_CALLGRIND = '--ir'  in sys.argv
+JIT_MODE      = '--jit' in sys.argv
 positional = [a for a in sys.argv[1:] if not a.startswith('--')]
-OLD = positional[0] if positional else './out/btf_v1'
+OLD = positional[0] if positional else os.path.join(ROOT, 'out', 'btf_v1')
+
+# Env for the JIT run: enable the native backend (interp run uses base env).
+JIT_ENV = {**os.environ, 'BTF_JIT': '1'}
 
 def write(path, content):
     with open(path, 'w') as f:
         f.write(content)
 
-def time_run(binary, src):
+def time_run(binary, src, env=None):
     times = []
     for _ in range(RUNS):
         t0 = time.perf_counter()
-        subprocess.run([binary, src], stdout=subprocess.DEVNULL, check=True)
+        subprocess.run([binary, src], stdout=subprocess.DEVNULL, check=True, env=env)
         t1 = time.perf_counter()
         times.append((t1 - t0) * 1000)
     return min(times)
 
-def ir_run(binary, src):
+def ir_run(binary, src, env=None):
     f = tempfile.mktemp()
     subprocess.run(
         ['valgrind', '--tool=callgrind', f'--callgrind-out-file={f}', binary, src],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, env=env
     )
     with open(f) as h:
         for line in h:
@@ -90,22 +99,42 @@ tests = {
         '>> ] < ] .',
 }
 
+measure = ir_run if USE_CALLGRIND else time_run
+metric  = 'Ir' if USE_CALLGRIND else 'ms'
+
+if JIT_MODE:
+    # interp vs JIT on the same build.  Tests whose IR lacks MUL3/DIV3 (or uses
+    # ops can_compile rejects) fall back to the interpreter, so they read ~1.0x:
+    # that itself shows where the JIT does and does not engage.
+    if not os.path.exists(NEW):
+        print(f'{NEW} not found; run ./build.sh first', file=sys.stderr)
+        sys.exit(1)
+    print(f'interp vs JIT  bin={NEW}')
+    lcol, rcol = 'interp '+metric, 'jit '+metric
+    print(f'{"test":24s} {lcol:>12s} {rcol:>12s} {"speedup":>10s}')
+    for name, content in tests.items():
+        path = f'{TMP}/{name.split()[0]}.btf'
+        write(path, content)
+        interp = measure(NEW, path)               # base env
+        jit    = measure(NEW, path, env=JIT_ENV)   # BTF_JIT=1
+        ratio  = interp / jit if jit > 0 else float('inf')
+        if USE_CALLGRIND:
+            print(f'{name:24s} {interp:>12,d} {jit:>12,d} {ratio:>9.2f}x')
+        else:
+            print(f'{name:24s} {interp:>12.2f} {jit:>12.2f} {ratio:>9.2f}x')
+    sys.exit(0)
+
 if not os.path.exists(OLD):
     print(f'snapshot {OLD} not found; cp out/btf out/btf_<tag> first', file=sys.stderr)
     sys.exit(1)
 
 print(f'comparing  new={NEW}  old={OLD}')
-metric = 'Ir' if USE_CALLGRIND else 'ms'
 print(f'{"test":24s} {"old "+metric:>12s} {"new "+metric:>12s} {"speedup":>10s}')
 for name, content in tests.items():
     path = f'{TMP}/{name.split()[0]}.btf'
     write(path, content)
-    if USE_CALLGRIND:
-        old = ir_run(OLD, path)
-        new = ir_run(NEW, path)
-    else:
-        old = time_run(OLD, path)
-        new = time_run(NEW, path)
+    old = measure(OLD, path)
+    new = measure(NEW, path)
     ratio = old / new if new > 0 else float('inf')
     if USE_CALLGRIND:
         print(f'{name:24s} {old:>12,d} {new:>12,d} {ratio:>9.2f}x')

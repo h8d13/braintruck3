@@ -41,14 +41,14 @@ mkdir -p out
 
 # btf: compile each TU to .o, then link.  Demonstrates the two-stage
 # C++ build (compile + link) explicitly rather than hiding it.
-echo "==> $CXX $CXXFLAGS -c cell.cpp -o out/cell.o"
-$CXX $CXXFLAGS -c cell.cpp -o out/cell.o
+echo "==> $CXX $CXXFLAGS -c src/cell.cpp -o out/cell.o"
+$CXX $CXXFLAGS -c src/cell.cpp -o out/cell.o
 
-echo "==> $CXX $CXXFLAGS -c jit.cpp -o out/jit.o"
-$CXX $CXXFLAGS -c jit.cpp -o out/jit.o
+echo "==> $CXX $CXXFLAGS -c src/jit.cpp -o out/jit.o"
+$CXX $CXXFLAGS -c src/jit.cpp -o out/jit.o
 
-echo "==> $CXX $CXXFLAGS -c btf.cpp -o out/btf.o"
-$CXX $CXXFLAGS -c btf.cpp -o out/btf.o
+echo "==> $CXX $CXXFLAGS -c src/btf.cpp -o out/btf.o"
+$CXX $CXXFLAGS -c src/btf.cpp -o out/btf.o
 
 echo "==> $CXX out/btf.o out/cell.o out/jit.o -o out/btf"
 $CXX out/btf.o out/cell.o out/jit.o -o out/btf
