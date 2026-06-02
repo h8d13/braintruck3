@@ -1,4 +1,4 @@
-# Hello World! in btf, balanced ternary.
+# Hello, World! in btf, balanced ternary.
 # Strategy: Horner-build each value via balanced trits (MSB to LSB).
 #   For each trit going left-to-right: emit '*' (skip on first), then
 #   '+' if trit=+1, '-' if trit=-1, nothing if trit=0.
@@ -20,8 +20,11 @@
 # o: writer += 3
 > + * [<+>-] < .
 
-# space: writer -= 79
-> + * * * - * + [<->-] < .
+# comma: writer -= 67.   67 = +-+++ ==> + * - * + * + * +
+> + * - * + * + * + [<->-] < .
+
+# space: writer -= 12.   12 = ++0   ==> + * + *
+> + * + * [<->-] < .
 
 # W: writer += 55
 > + * - * * * + [<+>-] < .

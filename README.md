@@ -1,4 +1,4 @@
-# bt3
+# btf
 
 Cells are 5-trit balanced ternary (range ±121, wrap mod 243).
 
@@ -14,6 +14,6 @@ Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign (-1 / 0 / +1
 
 `:` and `;` do trit-string I/O (using "+0-" alphabet)
 
-`+ - > < [ ] . ,` unchanged from original bt.
+`+ - > < [ ] . ,` unchanged from original bf.
 
 ---
