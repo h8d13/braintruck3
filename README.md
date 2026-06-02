@@ -1,4 +1,4 @@
-# bf3
+# bt3
 
 Cells are 5-trit balanced ternary (range ±121, wrap mod 243).
 
