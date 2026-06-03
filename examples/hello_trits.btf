@@ -1,0 +1,41 @@
+# "Hello, World!" rendered twice in one program:
+#   line 1: each character's value as a balanced-ternary +0- trit-string
+#           (concatenated, via : / PUTTR)
+#   line 2: the readable ASCII text (via . / PUTC)
+# Same Horner deltas as hello.btf; only the print op differs per pass.
+# Tape: cell0 = writer, cell1 = scratch counter.
+
+# ---- pass 1: trit-strings ----
++ * * - * * :                  # H
+> + * * + * - [<+>-] < :       # e
+> + * - * + [<+>-] < :         # l
+:                              # l
+> + * [<+>-] < :               # o
+> + * - * + * + * + [<->-] < : # ,
+> + * + * [<->-] < :           # space
+> + * - * * * + [<+>-] < :     # W
+> + * * - * [<+>-] < :         # o
+> + * [<+>-] < :               # r
+> + * - * [<->-] < :           # l
+> + * * - [<->-] < :           # d
+> + * - * + * + * + [<->-] < : # !
+
+# newline between the two renderings (build 10 in scratch, print, clear scratch)
+> + * * + . [-] <
+
+# clear writer, then ---- pass 2: ASCII text ----
+[-]
++ * * - * * .                  # H
+> + * * + * - [<+>-] < .       # e
+> + * - * + [<+>-] < .         # l
+.                              # l
+> + * [<+>-] < .               # o
+> + * - * + * + * + [<->-] < . # ,
+> + * + * [<->-] < .           # space
+> + * - * * * + [<+>-] < .     # W
+> + * * - * [<+>-] < .         # o
+> + * [<+>-] < .               # r
+> + * - * [<->-] < .           # l
+> + * * - [<->-] < .           # d
+> + * - * + * + * + [<->-] < . # !
+> + * * - * - [<->-] < .       # newline
