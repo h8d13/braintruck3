@@ -20,7 +20,12 @@ struct Op {
         // Constant register: print a stored byte cheaply, without disturbing
         // the running cell (e.g. a frequent char like ' ' interleaved in text).
         REG_STORE,  // ^  : R = current cell
-        REG_PUT     // ~  : print R as a byte (cell + pointer untouched)
+        REG_PUT,    // ~  : print R as a byte (cell + pointer untouched)
+        // Anchor register: a second slot used as a build base. Recall it into
+        // the cell, then a small diff reaches a nearby value, cheaper than a
+        // full Horner build for a cluster of close characters.
+        ANC_STORE,  // @  : A = current cell
+        ANC_RECALL  // _  : current cell = A
     } kind;
     std::int32_t arg;
 };

@@ -6,11 +6,14 @@
 // Balanced ternary makes (b) cheap (<=5 trits via the *3 op), while (a) wins
 // for small steps between neighbouring characters.
 //
-// One frequent character can also be parked in the constant register: build it
-// once, '^' to store, then each occurrence is a single '~'. This both shrinks
-// repeats and keeps that char out of the running cell, so its neighbours don't
-// have to jump to/from it (e.g. spaces sitting far below a run of letters). The
-// best register char (if any) is chosen by trying each and keeping the shortest.
+// Two registers help further:
+//   - constant register (^/~): park a frequent char, emit each occurrence as a
+//     single '~'. Keeps it out of the running cell, so neighbours don't jump
+//     to/from it (e.g. spaces far below a run of letters).
+//   - anchor register (@/_): park a build base; chars near it become '_' + a
+//     small diff instead of a full Horner build (a tight cluster of letters).
+// The best (register, anchor) pair is chosen by trying every combination over
+// the distinct characters and keeping the shortest program.
 //
 // Text comes from argv (joined with spaces) or stdin if no args.
 
@@ -48,13 +51,27 @@ static std::string build(int v) {
     return s;
 }
 
-// Emit `text`, parking byte `reg` in the constant register (reg < 0 = none).
-static std::string gen(const std::string& text, int reg) {
+// Unary run of `n` '+' or '-', then a '.'  ("" run when n==0, so just '.').
+static std::string unary(int n) {
+    return std::string(n >= 0 ? n : -n, n >= 0 ? '+' : '-') + '.';
+}
+
+// Emit `text`, optionally parking one byte in the constant register (reg, for
+// cheap reprints via ~) and one in the anchor register (anc, a build base
+// recalled via _ then nudged by a small diff).  reg/anc < 0 = unused.
+static std::string gen(const std::string& text, int reg, int anc) {
     std::string prog;
     int prev = 0;
     bool started = false;
 
+    if (anc >= 0) {                 // build the anchor base once, store it
+        prog += build(anc);
+        prog += '@';
+        prev = anc;
+        started = true;
+    }
     if (reg >= 0) {                 // build the register char once, store it
+        if (started) prog += '>';   // on a fresh cell, leaving the anchor cell
         prog += build(reg);
         prog += '^';
         prev = reg;                 // the build cell becomes the running cell
@@ -67,12 +84,17 @@ static std::string gen(const std::string& text, int reg) {
         if (!started) {             // first char built directly into cell0 (==0)
             prog += build(v) + '.';
             started = true;
-        } else {
-            int d = v - prev;
-            std::string unary = std::string(d >= 0 ? d : -d, d >= 0 ? '+' : '-') + '.';
-            std::string fresh = '>' + build(v) + '.';
-            prog += unary.size() <= fresh.size() ? unary : fresh;
+            prev = v;
+            continue;
         }
+        std::string best = unary(v - prev);          // diff on the running cell
+        std::string fresh = '>' + build(v) + '.';    // absolute build, fresh cell
+        if (fresh.size() < best.size()) best = fresh;
+        if (anc >= 0) {                               // recall anchor + small diff
+            std::string rec = '_' + unary(v - anc);
+            if (rec.size() < best.size()) best = rec;
+        }
+        prog += best;
         prev = v;
     }
     return prog;
@@ -91,15 +113,21 @@ int main(int argc, char** argv) {
         text = ss.str();
     }
 
-    std::string best = gen(text, -1);            // baseline: no register
+    // Search every (register, anchor) pair over the distinct chars (plus "none"
+    // for each), keep the shortest. Each is a candidate base/frequent char.
+    std::vector<int> cands = {-1};
     bool seen[256] = {};
     for (char ch : text) {
         int c = static_cast<unsigned char>(ch);
-        if (seen[c]) continue;                   // each distinct char once
-        seen[c] = true;
-        std::string cand = gen(text, c);
-        if (cand.size() < best.size()) best = cand;
+        if (!seen[c]) { seen[c] = true; cands.push_back(c); }
     }
+
+    std::string best = gen(text, -1, -1);
+    for (int reg : cands)
+        for (int anc : cands) {
+            std::string cand = gen(text, reg, anc);
+            if (cand.size() < best.size()) best = cand;
+        }
 
     // Wrap to keep lines readable; whitespace is ignored by the interpreter.
     constexpr std::size_t WIDTH = 72;

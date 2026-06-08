@@ -94,6 +94,8 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
             case ';': flush_add(); flush_move(); ops.push_back({Op::GETTR, 0}); break;
             case '^': flush_add(); flush_move(); ops.push_back({Op::REG_STORE, 0}); break;
             case '~': flush_add(); flush_move(); ops.push_back({Op::REG_PUT,   0}); break;
+            case '@': flush_add(); flush_move(); ops.push_back({Op::ANC_STORE, 0}); break;
+            case '_': flush_add(); flush_move(); ops.push_back({Op::ANC_RECALL,0}); break;
             case '[':
                 flush_add(); flush_move();
                 bracket_stack.push(ops.size());
@@ -223,6 +225,7 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
     ptr_t p = 0;
     std::size_t pc = 0;
     Cell R{};                                // constant register (^ store, ~ print)
+    Cell A{};                                // anchor register   (@ store, _ recall)
 
     if (n == 0) return 0;
 
@@ -234,7 +237,7 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
         &&op_jz, &&op_jnz,
         &&op_set, &&op_move_add, &&op_move_sub,
         &&op_add_at, &&op_sub_at, &&op_scan,
-        &&op_reg_store, &&op_reg_put
+        &&op_reg_store, &&op_reg_put, &&op_anc_store, &&op_anc_recall
     };
 #define NEXT() do { if (++pc >= n) return 0; \
                     goto *table[op[pc].kind]; } while (0)
@@ -290,6 +293,8 @@ op_scan: {
 }
 op_reg_store: R = tape[p];                                            NEXT();
 op_reg_put:   std::cout.put(static_cast<char>(R.to_byte()));          NEXT();
+op_anc_store:  A = tape[p];                                           NEXT();
+op_anc_recall: tape[p] = A;                                           NEXT();
 #undef NEXT
 #pragma GCC diagnostic pop
 }

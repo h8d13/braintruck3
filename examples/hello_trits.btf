@@ -1,41 +1,30 @@
-# "Hello, World!" rendered twice in one program:
-#   line 1: each character's value as a balanced-ternary +0- trit-string
-#           (concatenated, via : / PUTTR)
-#   line 2: the readable ASCII text (via . / PUTC)
-# Same Horner deltas as hello.btf; only the print op differs per pass.
-# Tape: cell0 = writer, cell1 = scratch counter.
+# "Hello, World!" rendered twice from ONE set of cells:
+#   line 1: each char's value as +0- trits  (loop [:>], a single PUTTR)
+#   line 2: the ASCII text                  (loop [.>], a single PUTC)
+#
+# Build once, print twice. Cells 1..13 hold the chars; cell0 is a 0 sentinel
+# for the [<] rewind. The anchor register holds 108 ('l', the cluster centre):
+# nearby chars are '_' (recall anchor) + a small diff, the rest absolute Horner.
+#
+# Expected stdout:
+#   +0-00++-+-++000++000++0+0+--0-++--+0+-0++0+0+++-0++000++-0+++-0
+#   Hello, World!
 
-# ---- pass 1: trit-strings ----
-+ * * - * * :                  # H
-> + * * + * - [<+>-] < :       # e
-> + * - * + [<+>-] < :         # l
-:                              # l
-> + * [<+>-] < :               # o
-> + * - * + * + * + [<->-] < : # ,
-> + * + * [<->-] < :           # space
-> + * - * * * + [<+>-] < :     # W
-> + * * - * [<+>-] < :         # o
-> + * [<+>-] < :               # r
-> + * - * [<->-] < :           # l
-> + * * - [<->-] < :           # d
-> + * - * + * + * + [<->-] < : # !
++*+***@[-]      # cell0 = 108, store anchor, clear to a 0 sentinel
+>+**-**         # H  72
+>_-------       # e  101  (108-7)
+>_              # l  108
+>_              # l  108
+>_+++           # o  111
+>+*-*-**-       # ,  44
+>+*+*-*-        # space 32
+>+**+*-*        # W  87
+>_+++           # o  111
+>_++++++        # r  114
+>_              # l  108
+>+*+*-**+       # d  100
+>+*+*-*         # !  33
 
-# newline between the two renderings (build 10 in scratch, print, clear scratch)
-> + * * + . [-] <
-
-# clear writer, then ---- pass 2: ASCII text ----
-[-]
-+ * * - * * .                  # H
-> + * * + * - [<+>-] < .       # e
-> + * - * + [<+>-] < .         # l
-.                              # l
-> + * [<+>-] < .               # o
-> + * - * + * + * + [<->-] < . # ,
-> + * + * [<->-] < .           # space
-> + * - * * * + [<+>-] < .     # W
-> + * * - * [<+>-] < .         # o
-> + * [<+>-] < .               # r
-> + * - * [<->-] < .           # l
-> + * * - [<->-] < .           # d
-> + * - * + * + * + [<->-] < . # !
-> + * * - * - [<->-] < .       # newline
+[<]>[:>]        # rewind to cell1, print every cell's trits
++**+.[-]        # newline: build 10, print, clear back to 0
+<[<]>[.>]       # rewind again, print every cell as ASCII

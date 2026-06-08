@@ -16,6 +16,9 @@ Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign.
 Constant register (one stored byte, for cheap reprints of a frequent char):
 - `^` store current cell into the register, `~` print the register as a byte (cell + pointer untouched).
 
+Anchor register (a second slot used as a build base):
+- `@` store current cell into the anchor, `_` recall the anchor into the cell (then a small diff reaches a nearby value).
+
 `+ - > < [ ] . ,` unchanged from original bf.
 
 ---
@@ -31,11 +34,15 @@ Arch is the best
 ```
 
 For "Arch is the best" that's **97 ops** (see `examples/arch_short.btf`)
-vs **200+ ops** for hand-written original bf.
+vs **200+ ops** for hand-written original bf. `examples/arch_shorter.btf` pushes
+it to **83 ops** by also parking `114` in the anchor register, so the cluster
+letters build via `_` + a small diff instead of a full Horner build.
 
 `examples/arch.btf` is the older naive output (226 ops, one scratch+transfer per
 char) kept for comparison; it embeds the equivalent original bf as a comment. It
 round-trips the same way:
 ```shell
 cat ./examples/arch.btf | ./out/btf /dev/stdin; echo
+# you can also simply print the ops 
+./out/txt2btf "Arch is the best"
 ```

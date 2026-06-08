@@ -63,6 +63,7 @@ bool BtfJit::can_compile(const std::vector<Op>& ops) {
             case Op::MOVE_ADD: case Op::MOVE_SUB:
             case Op::ADD_AT:   case Op::SUB_AT:
             case Op::REG_STORE: case Op::REG_PUT:
+            case Op::ANC_STORE: case Op::ANC_RECALL:
                 return false;
             case Op::MUL3: case Op::DIV3:
                 has_arith = true;
