@@ -41,5 +41,3 @@ See `examples/arch.btf` for the generated source. Which you can then round trip 
 ```shell
 cat ./examples/arch.btf | ./out/btf /dev/stdin; echo
 ```
-
----

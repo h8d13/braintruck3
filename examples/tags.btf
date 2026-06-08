@@ -1,16 +1,16 @@
-# Tags: opaque MARKERS (not numbers), held in overlay codes 131..134.
-#   @  select a tag (by repetition)   &  print as Tn
-#   =  decode a tag to 1..4 in a normal cell (or 0 if not a tag)
-# A tag has no magnitude; '=' is the bridge that makes it branchable.
+# Tags: a sentinel distinct from EVERY data value (including nonzero ones).
+#   @  place a marker   &  print it as Tn
+#   =  decode: marker -> 1..4, any data (even nonzero) -> 0
 #
-# Expected stdout: T0!!!
+# Why a plain number can't do this: brainfuck's only test, [ ], asks "is this
+# cell zero?". It cannot tell data 5 from a marker   both are nonzero. '='
+# can: it returns 0 for data and nonzero for a marker, so a uniform pass picks
+# the markers out of a tape full of nonzero data.
+#
+# Expected stdout: 0+0+0+-   (0 marks data, nonzero marks a marker)
 
-# Place a marker and read it back.
-@&          # cell0: marker -> T0
-
-# '=' decodes a tag to a number, so a tag can drive control flow. Here the
-# tag's value IS the loop count:
->           #          move to cell1 (the counter)
->+*+*-*<    # cell2 = '!' (33), the char to print; back to cell1
-@@@=        # cell1 = tag T2, decoded -> 3
-[>.<-]      # loop 3x: print cell2  -> !!!   (T0 would give !, T3 -> !!!!)
++++++=:     # cell0: data 5   -> 0   -> 0
+>@=:        # cell1: marker T0 -> 1  -> +
+>+++=:      # cell2: data 3   -> 0   -> 0
+>@@@=:      # cell3: marker T2 -> 3  -> +0
+>@@=:       # cell4: marker T1 -> 2  -> +-
