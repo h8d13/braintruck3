@@ -18,7 +18,7 @@ Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign.
 
 `:` and `;` do trit-string I/O (using `+0-` alphabet)
 
-Overlay ops (interpreter-only; the JIT declines programs using them):
+Overlay ops:
 - `{` set subcell 0, `)` subcell +1, `(` subcell -1 (balanced wrap ±4), `}` print subcell as 2 trits.
 - `@` select tag `T0..T3` (by repetition), `&` print current tag.
 - `=` decode a tag to `1..4` in a normal cell (or `0` if not a tag) so `[ ]`/arithmetic can branch on it.
