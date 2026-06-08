@@ -1,0 +1,16 @@
+# Tags: opaque MARKERS (not numbers), held in overlay codes 131..134.
+#   @  select a tag (by repetition)   &  print as Tn
+#   =  decode a tag to 1..4 in a normal cell (or 0 if not a tag)
+# A tag has no magnitude; '=' is the bridge that makes it branchable.
+#
+# Expected stdout: T0!!!
+
+# Place a marker and read it back.
+@&          # cell0: marker -> T0
+
+# '=' decodes a tag to a number, so a tag can drive control flow. Here the
+# tag's value IS the loop count:
+>           #          move to cell1 (the counter)
+>+*+*-*<    # cell2 = '!' (33), the char to print; back to cell1
+@@@=        # cell1 = tag T2, decoded -> 3
+[>.<-]      # loop 3x: print cell2  -> !!!   (T0 would give !, T3 -> !!!!)
