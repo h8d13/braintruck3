@@ -40,6 +40,16 @@ static std::string build(int magnitude) {
     return s;
 }
 
+// Ops to move the writer from `from` to `to` (scratch assumed 0, left at 0).
+// A fresh writer (from == 0) builds the value directly; otherwise the diff's
+// magnitude is built in scratch and drained in (+ when to > from, - when below).
+static std::string move(int from, int to) {
+    if (from == 0) return build(to);
+    int diff = to - from;
+    if (diff == 0) return "";
+    return '>' + build(diff) + (diff > 0 ? "[<+>-]" : "[<->-]") + "<";
+}
+
 int main(int argc, char** argv) {
     std::string text;
     if (argc > 1) {
@@ -55,18 +65,10 @@ int main(int argc, char** argv) {
 
     std::string prog;
     int prev = 0;
-    for (std::size_t i = 0; i < text.size(); ++i) {
-        int v = static_cast<unsigned char>(text[i]);
-        int diff = v - prev;
+    for (char ch : text) {
+        int v = static_cast<unsigned char>(ch);
+        prog += move(prev, v) + '.';
         prev = v;
-        if (i == 0) {
-            prog += build(v) + '.';            // writer starts at 0
-        } else if (diff == 0) {
-            prog += '.';                       // same char, just print
-        } else {
-            prog += '>' + build(diff) +
-                    (diff > 0 ? "[<+>-]" : "[<->-]") + "<.";
-        }
     }
 
     // Wrap to keep lines readable; whitespace is ignored by the interpreter.

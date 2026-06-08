@@ -17,3 +17,20 @@ Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign (-1 / 0 / +1
 `+ - > < [ ] . ,` unchanged from original bf.
 
 ---
+
+## Example (inspired [from](https://wiki.archlinux.org/title/Arch_is_the_best))
+
+`out/txt2btf` generates a btf program that prints a string (text from args,
+joined with spaces, or stdin):
+
+```shell
+./out/txt2btf "Arch is the best" | ./out/btf /dev/stdin
+Arch is the best
+```
+
+See `examples/arch.btf` for the generated source. Which you can then round trip again:
+```shell
+cat ./examples/arch.btf | ./out/btf /dev/stdin; echo
+```
+
+---
