@@ -54,3 +54,9 @@ echo "==> $CXX out/btf.o out/cell.o out/jit.o -o out/btf"
 $CXX out/btf.o out/cell.o out/jit.o -o out/btf
 
 echo "==> built out/btf"
+
+# txt2btf: single-TU tool, text -> btf source generator.
+echo "==> $CXX $CXXFLAGS src/txt2btf.cpp -o out/txt2btf"
+$CXX $CXXFLAGS src/txt2btf.cpp -o out/txt2btf
+
+echo "==> built out/txt2btf"
