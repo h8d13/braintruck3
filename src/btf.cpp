@@ -92,13 +92,8 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
             case ',': flush_add(); flush_move(); ops.push_back({Op::GETC,  0}); break;
             case ':': flush_add(); flush_move(); ops.push_back({Op::PUTTR, 0}); break;
             case ';': flush_add(); flush_move(); ops.push_back({Op::GETTR, 0}); break;
-            case '{': flush_add(); flush_move(); ops.push_back({Op::SUB_SET0, 0}); break;
-            case ')': flush_add(); flush_move(); ops.push_back({Op::SUB_INC,  0}); break;
-            case '(': flush_add(); flush_move(); ops.push_back({Op::SUB_DEC,  0}); break;
-            case '}': flush_add(); flush_move(); ops.push_back({Op::SUB_PUT,  0}); break;
-            case '@': flush_add(); flush_move(); ops.push_back({Op::TAG_NEXT, 0}); break;
-            case '&': flush_add(); flush_move(); ops.push_back({Op::TAG_PUT,  0}); break;
-            case '=': flush_add(); flush_move(); ops.push_back({Op::TAG_ORD,  0}); break;
+            case '^': flush_add(); flush_move(); ops.push_back({Op::REG_STORE, 0}); break;
+            case '~': flush_add(); flush_move(); ops.push_back({Op::REG_PUT,   0}); break;
             case '[':
                 flush_add(); flush_move();
                 bracket_stack.push(ops.size());
@@ -227,6 +222,7 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
     const std::size_t n = ops.size();
     ptr_t p = 0;
     std::size_t pc = 0;
+    Cell R{};                                // constant register (^ store, ~ print)
 
     if (n == 0) return 0;
 
@@ -238,8 +234,7 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
         &&op_jz, &&op_jnz,
         &&op_set, &&op_move_add, &&op_move_sub,
         &&op_add_at, &&op_sub_at, &&op_scan,
-        &&op_sub_set0, &&op_sub_inc, &&op_sub_dec,
-        &&op_sub_put, &&op_tag_next, &&op_tag_put, &&op_tag_ord
+        &&op_reg_store, &&op_reg_put
     };
 #define NEXT() do { if (++pc >= n) return 0; \
                     goto *table[op[pc].kind]; } while (0)
@@ -293,19 +288,8 @@ op_scan: {
     }
     NEXT();
 }
-op_sub_set0: tape[p] = Cell::make_sub(0);                             NEXT();
-op_sub_inc:  tape[p] = Cell::make_sub(
-                 (tape[p].is_sub() ? tape[p].sub_value() : 0) + 1);   NEXT();
-op_sub_dec:  tape[p] = Cell::make_sub(
-                 (tape[p].is_sub() ? tape[p].sub_value() : 0) - 1);   NEXT();
-op_sub_put:  if (tape[p].is_sub()) std::cout << tape[p].sub_trits();  NEXT();
-op_tag_next: tape[p] = Cell::make_tag(
-                 tape[p].is_tag() ? tape[p].tag() + 1 : 0);           NEXT();
-op_tag_put:  if (tape[p].is_tag()) {
-                 std::cout.put('T');
-                 std::cout.put(static_cast<char>('0' + tape[p].tag()));
-             }                                                        NEXT();
-op_tag_ord:  tape[p] = tape[p].is_tag() ? Cell(tape[p].tag() + 1) : Cell(0); NEXT();
+op_reg_store: R = tape[p];                                            NEXT();
+op_reg_put:   std::cout.put(static_cast<char>(R.to_byte()));          NEXT();
 #undef NEXT
 #pragma GCC diagnostic pop
 }

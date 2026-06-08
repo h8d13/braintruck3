@@ -6,22 +6,15 @@ Instead of unsigned 8-bit (0..255, mod 256).
 
 Kept dense as `int8_t` in a `std::vector<Cell>` tape.
 
-13 of the 256 `int8` codes (`-128..-122`, `+122..+127`) are unreachable.
-
-Those 13 are contiguous in the *unsigned* byte view (`122..134`), reused as an
-overlay namespace: a **2-trit balanced subcell** (±4, 9 codes `122..130`,
-value = `u - 126`) plus **4 tags** (codes `131..134`). They are inert under
-`+ - * /`: any arithmetic runs through `wrap()`, which folds the result back
-into ±121, so only the overlay ops below create or touch them.
+13 of the 256 `int8` codes (`-128..-122`, `+122..+127`) are simply unreachable
+dead space — the cost of 243 < 256.
 
 Adds five ops: `*` `/` are ×3 / ÷3 trit shifts, `?` extracts sign.
 
 `:` and `;` do trit-string I/O (using `+0-` alphabet)
 
-Overlay ops:
-- `{` set subcell 0, `)` subcell +1, `(` subcell -1 (balanced wrap ±4), `}` print subcell as 2 trits.
-- `@` select tag `T0..T3` (by repetition), `&` print current tag.
-- `=` decode a tag to `1..4` in a normal cell (or `0` if not a tag) so `[ ]`/arithmetic can branch on it.
+Constant register (one stored byte, for cheap reprints of a frequent char):
+- `^` store current cell into the register, `~` print the register as a byte (cell + pointer untouched).
 
 `+ - > < [ ] . ,` unchanged from original bf.
 
@@ -37,7 +30,12 @@ joined with spaces, or stdin):
 Arch is the best
 ```
 
-See `examples/arch.btf` for the generated source. Which you can then round trip again:
+For "Arch is the best" that's **97 ops** (see `examples/arch_short.btf`)
+vs **200+ ops** for hand-written original bf.
+
+`examples/arch.btf` is the older naive output (226 ops, one scratch+transfer per
+char) kept for comparison; it embeds the equivalent original bf as a comment. It
+round-trips the same way:
 ```shell
 cat ./examples/arch.btf | ./out/btf /dev/stdin; echo
 ```

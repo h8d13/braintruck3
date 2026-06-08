@@ -17,14 +17,10 @@ struct Op {
         ADD_AT,     // ADD_AT  d : tape[p+d] += cell
         SUB_AT,     // SUB_AT  d : tape[p+d] -= cell
         SCAN,       // SCAN    d : while (!tape[p].zero) p += d
-        // Overlay ops on the 13 leftover codes (interpreter-only; JIT declines).
-        SUB_SET0,   // {  : cell = subcell 0
-        SUB_INC,    // )  : subcell += 1 (balanced wrap ±4)
-        SUB_DEC,    // (  : subcell -= 1 (balanced wrap ±4)
-        SUB_PUT,    // }  : print subcell as 2 balanced trits
-        TAG_NEXT,   // @  : cycle tag T0..T3
-        TAG_PUT,    // &  : print current tag as "T0".."T3"
-        TAG_ORD     // =  : decode tag to 1..4 (normal cell); 0 if not a tag
+        // Constant register: print a stored byte cheaply, without disturbing
+        // the running cell (e.g. a frequent char like ' ' interleaved in text).
+        REG_STORE,  // ^  : R = current cell
+        REG_PUT     // ~  : print R as a byte (cell + pointer untouched)
     } kind;
     std::int32_t arg;
 };

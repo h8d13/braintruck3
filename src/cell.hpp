@@ -35,40 +35,6 @@ public:
     std::string trits() const;
     static Cell from_trits(const std::string& s);
 
-    // --- Overlay namespace in the 13 codes the 5-trit range never produces ---
-    // In unsigned view those codes are contiguous: 122..134. They carry a
-    // 2-trit balanced subcell (±4) in 122..130 (value = u - 126) and 4 tags
-    // in 131..134 (tag = u - 131). Inert under + - * / : wrap() folds any
-    // arithmetic result back into ±121, so only the { ) ( } @ & ops create
-    // or touch them.
-    static constexpr int SPEC_LO  = 122;   // first overlay code (unsigned)
-    static constexpr int SUB_HI   = 130;   // last subcell code
-    static constexpr int SUB_ZERO = 126;   // subcell value 0
-    static constexpr int TAG_LO   = 131;   // first tag code
-    static constexpr int SPEC_HI  = 134;   // last overlay code
-
-    constexpr unsigned ubyte()      const { return static_cast<unsigned char>(v_); }
-    constexpr bool     is_special() const { return ubyte() >= SPEC_LO && ubyte() <= SPEC_HI; }
-    constexpr bool     is_sub()     const { return ubyte() >= SPEC_LO && ubyte() <= SUB_HI; }
-    constexpr bool     is_tag()     const { return ubyte() >= TAG_LO  && ubyte() <= SPEC_HI; }
-    constexpr int      sub_value()  const { return static_cast<int>(ubyte()) - SUB_ZERO; }
-    constexpr int      tag()        const { return static_cast<int>(ubyte()) - TAG_LO; }
-
-    // Construct from a literal storage byte, bypassing wrap() (which would
-    // otherwise fold an overlay code back into ±121).
-    static constexpr Cell from_raw(storage_t raw) { Cell c; c.v_ = raw; return c; }
-
-    // Subcell value wraps balanced mod 9 (±4), mirroring the cell's mod-243.
-    static constexpr int sub_wrap(int s) { return ((s + 4) % 9 + 9) % 9 - 4; }
-    static constexpr Cell make_sub(int s) {
-        return from_raw(static_cast<storage_t>(SUB_ZERO + sub_wrap(s)));
-    }
-    static constexpr Cell make_tag(int t) {
-        return from_raw(static_cast<storage_t>(TAG_LO + ((t % 4) + 4) % 4));
-    }
-
-    std::string sub_trits() const;   // subcell as 2 balanced trits, e.g. "+-"
-
     // Range-check via unsigned reinterpretation (one cmp).
     // Hot inputs (cell ± 1, cell × 3) all fit in |x| <= MAX + MOD, so a
     // single ±MOD adjustment after that branch suffices.
