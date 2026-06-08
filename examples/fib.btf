@@ -1,0 +1,2 @@
+# run with: './out/btf examples/fib.btf | ./out/trits2text | od -An -tu1' should ouptut 0...89
++++++++++++>+>+>>>+**+<<<<<[>:>>>>.<<<<>[->+>+<<]<[->+<]>>>[-<<+>>]<<<>>[-<<+>>]<<<-]
