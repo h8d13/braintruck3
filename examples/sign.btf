@@ -1,8 +1,2 @@
-# ? extracts the cell's sign: cell -> {-1, 0, +1} in one op.
-# Runs across three cells set to positive / zero / negative.
-#
-# Expected stdout: "+0-"
-
-+++++ ? :        # cell0 = 5  -> +1; trits "+"
-> ? :            # cell1 = 0  ->  0; trits "0"
-> --- ? :        # cell2 = -3 -> -1; trits "-"
+# ? collapses a cell to its sign (-1/0/+1), printed as trits on +, 0, - -> +0-
++++++?:>?:>---?:

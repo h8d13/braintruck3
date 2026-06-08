@@ -1,14 +1,2 @@
-# btf's "free" trit-shift ops on a single cell:
-#   *   cell *= 3        (left trit-shift)
-#   /   cell /= 3        (right trit-shift, trunc toward 0)
-#   ?   cell -> sign in {-1, 0, +1}
-# : prints the cell's balanced-ternary trit string ("+0-" alphabet).
-#
-# Build 81 by repeated *, descend by /, extract sign.
-# Expected stdout: "+0000+000+00+0+"
-
-+ * * * * :       # 1 -> 3 -> 9 -> 27 -> 81;  trits = "+0000"
-/ :                # 27;  "+000"
-/ :                # 9;   "+00"
-/ :                # 3;   "+0"
-? :                # +1;  "+"
+# free trit-shift ops: * (x3), / (/3), ? (sign); : prints trits. 81 down to 1 then sign -> +0000+000+00+0+
++****:/:/:/:?:
