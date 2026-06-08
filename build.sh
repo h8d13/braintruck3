@@ -60,3 +60,15 @@ echo "==> $CXX $CXXFLAGS src/txt2btf.cpp -o out/txt2btf"
 $CXX $CXXFLAGS src/txt2btf.cpp -o out/txt2btf
 
 echo "==> built out/txt2btf"
+
+# btf-native filters: the logic is the btf program itself; the out/ wrapper is
+# a thin shim over out/btf.  text2trits <-> trits2text round-trip exactly.
+for tool in trits2text text2trits; do
+    cp "tools/$tool.btf" "out/$tool.btf"
+    cat > "out/$tool" <<EOF
+#!/bin/sh
+exec "\$(dirname "\$0")/btf" "\$(dirname "\$0")/$tool.btf"
+EOF
+    chmod +x "out/$tool"
+    echo "==> built out/$tool (btf-native)"
+done

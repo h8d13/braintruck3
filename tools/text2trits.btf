@@ -1,0 +1,4 @@
+# text2trits: encode stdin text to space-separated +0- trit-strings.
+# cell1 = ' '(32); read a byte (,), print its trits (:), print the space, loop.
+# Pairs with trits2text for an exact round trip. Reads stdin.
+>+*+*-*-<,[:>.<,]
