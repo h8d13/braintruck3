@@ -33,9 +33,8 @@ joined with spaces, or stdin):
 Arch is the best
 ```
 
-For "Arch is the best" that's **97 ops** (see `examples/arch_short.btf`)
-vs **200+ ops** for hand-written original bf. `examples/arch_shorter.btf` pushes
-it to **83 ops** by also parking `114` in the anchor register, so the cluster
+**83 ops** vs **200+ ops** for hand-written original bf. `examples/arch_shorter.btf` pushes
+it to  by also parking `114` in the anchor register, so the cluster
 letters build via `_` + a small diff instead of a full Horner build.
 
 `examples/arch.btf` is the older naive output (226 ops, one scratch+transfer per
@@ -43,6 +42,8 @@ char) kept for comparison; it embeds the equivalent original bf as a comment. It
 round-trips the same way:
 ```shell
 cat ./examples/arch.btf | ./out/btf /dev/stdin; echo
-# you can also simply print the ops 
-./out/txt2btf "Arch is the best"
 ```
+
+See [examples](./examples) for all the good shit.
+
+---
