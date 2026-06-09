@@ -55,11 +55,14 @@ $CXX out/btf.o out/cell.o out/jit.o -o out/btf
 
 echo "==> built out/btf"
 
-# txt2btf: single-TU tool, text -> btf source generator.
-echo "==> $CXX $CXXFLAGS src/txt2btf.cpp -o out/txt2btf"
-$CXX $CXXFLAGS src/txt2btf.cpp -o out/txt2btf
-
-echo "==> built out/txt2btf"
+# Single-TU tools sharing src/reach.hpp: txt2btf (text -> btf source),
+# btf-build (value -> shortest build op-string), btf-dis (program -> annotated).
+for tool in txt2btf btf_build btf_dis; do
+    out="out/${tool//_/-}"
+    echo "==> $CXX $CXXFLAGS src/$tool.cpp -o $out"
+    $CXX $CXXFLAGS "src/$tool.cpp" -o "$out"
+    echo "==> built $out"
+done
 
 # btf-native filters: the logic is the btf program itself; the out/ wrapper is
 # a thin shim over out/btf.  text2trits <-> trits2text round-trip exactly.
@@ -72,3 +75,5 @@ EOF
     chmod +x "out/$tool"
     echo "==> built out/$tool (btf-native)"
 done
+
+echo "==> run tests with: bash tests/run.sh"

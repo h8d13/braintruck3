@@ -34,4 +34,18 @@ The trit tools round-trip the same `0..242` set:
 printf 'lazy zebra' | ./out/btf out/text2trits.btf | ./out/btf out/trits2text.btf
 ```
 
+## Authoring tools
+
+Hand-writing btf is mostly "get a cell to value N, then print". Two helpers:
+
+```shell
+./out/btf-build 65          # ++(()   shortest ops to build a value
+./out/btf-build -c A        # A  ++(().   build-and-print a char
+./out/btf-dis examples/cafe.btf   # annotate a program op by op
+```
+
+`btf-build` exposes the translator's BFS for one value; `btf-dis` traces cell
+values through straight-line code (stopping at loops/input) so `+(()(.` reads as
+"build 65, print 'A'". Tests: `bash tests/run.sh`.
+
 See [examples](./examples) for all the good shit.
