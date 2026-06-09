@@ -17,22 +17,33 @@ registers:
 
 ## Example ([from](https://wiki.archlinux.org/title/Arch_is_the_best))
 
-```shell
-./out/txt2btf "Arch is the best" | ./out/btf /dev/stdin
-Arch is the best
+Hand-written brainfuck, "Arch is the best!", 203 ops:
+
+```brainfuck
+++>++++++>+++++<+[>[->+<]<->++++++++++<]>>.<[-]>[-<++>]
+<----------------.---------------.+++++.<+++[-<++++++++++>]<.
+>>+.++++++++++.<<.>>+.------------.---.<<.>>---.
++++.++++++++++++++.+.<<+.[-]++++++++++.
+```
+Same but with our new op types.
+```
++(()(@>+())^_()._-.*._+).~+._.~+.)./).~/)._)._.+.-)/.
 ```
 
-**49 ops** vs 200+ for hand-written bf. `txt2btf` reaches each char by a BFS over
-`+ - * / ( )`, so a letter lands as a fused-Horner build or a multiply off the
-value already in the cell (`115` is `+(()(`) rather than a from-zero `*`-build.
-See `examples/arch_shorter.btf`. `examples/arch.btf` is the naive 226-op version
-kept for comparison. `examples/lazy_zebra.btf` shows `!` printing `z` (byte 122),
-which `.` cannot reach.
+`txt2btf` reaches each char by a BFS over `+ - * / ( )`, so a letter lands as a
+fused-Horner build or a multiply off the value already in the cell (`115` is
+`+(()(`) rather than a from-zero `*`-build. 
 
-The trit tools round-trip the same `0..242` set:
+Same string in btf, 53 ops:
+
 ```shell
-printf 'lazy zebra' | ./out/btf out/text2trits.btf | ./out/btf out/trits2text.btf
+./out/txt2btf "Arch is the best!" | ./out/btf /dev/stdin
+Arch is the best!
 ```
+
+`examples/lazy_zebra.btf` shows `!` printing `z` (byte 122), which `.` cannot reach.
+
+See [examples](./examples) for all the good shit.
 
 ## Authoring tools
 
@@ -46,6 +57,7 @@ Hand-writing btf is mostly "get a cell to value N, then print". Two helpers:
 
 `btf-build` exposes the translator's BFS for one value; `btf-dis` traces cell
 values through straight-line code (stopping at loops/input) so `+(()(.` reads as
-"build 65, print 'A'". Tests: `bash tests/run.sh`.
+"build 65, print 'A'". 
 
-See [examples](./examples) for all the good shit.
+Tests: `bash tests/run.sh`.
+See also native [tools](./tools)
