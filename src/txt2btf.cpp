@@ -28,6 +28,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <algorithm>
 #include <queue>
 #include <sstream>
 #include <string>
@@ -45,20 +46,45 @@ constexpr long MAX_STATES = 48L << 20;  // per-chunk search budget (~300 MB)
 bool dead_band(int b) { return b >= 122 && b <= 134; }  // '~' can't print these
 
 // Anchor candidates for one target: the target itself plus every value one
-// arithmetic step away from it. A store can then park a hub that reaches
+// +/-/Horner step away from it. A store can then park a hub that reaches
 // several targets via single fused ops (e.g. 113 serves 'r' via p and 'a'
-// via l), which target-only candidates would miss.
+// via l), which target-only candidates would miss.  '/'-preimages (k == 3)
+// are skipped: they triple the value range per target and searches never
+// pick them (state-space cost without measured length wins).
 template <typename F>
 void for_anchor_candidates(int target, F&& f) {
     f(target);
     for (int v = -MAXV; v <= MAXV; ++v)
         for (int k = 0; k < 6; ++k)
-            if (btf::apply_step(v, k) == target) f(v);
+            if (k != 3 && btf::apply_step(v, k) == target) f(v);
 }
+
+// Search arrays, allocated once and reused across chunks: zeroing them per
+// chunk (vector construction memsets ~300 MB at full budget) dominated the
+// whole translation.  A state counts as visited when `vis` holds the current
+// epoch, so nothing is ever cleared; `par`/`via` are only read after a `vis`
+// hit, so they are never initialized at all.
+struct Search {
+    std::vector<uint8_t>  vis;
+    std::vector<uint32_t> par;
+    std::vector<char>     via;
+    uint8_t epoch = 0;
+
+    uint8_t begin(long total) {
+        if (static_cast<long>(vis.size()) < total) {
+            vis.resize(total, 0);
+            par.resize(total);
+            via.resize(total);
+        }
+        if (++epoch == 0) { std::fill(vis.begin(), vis.end(), 0); epoch = 1; }
+        return epoch;
+    }
+};
 
 // Exact shortest program printing `text` from entry state (cell, anc, con);
 // all three are updated to the exit state for the next chunk.
-std::string solve(const std::string& text, int& cell, int& anc, int& con) {
+std::string solve(const std::string& text, int& cell, int& anc, int& con,
+                  Search& ws) {
     const int N = static_cast<int>(text.size());
 
     // Candidate sets. Index 0 is always "empty"; the carried-in values must
@@ -98,14 +124,15 @@ std::string solve(const std::string& text, int& cell, int& anc, int& con) {
     auto id = [&](int i, int c, int ai, int ri) {
         return ((static_cast<long>(i) * btf::MOD + (c + MAXV)) * A + ai) * R + ri;
     };
-    std::vector<uint8_t>  vis(total, 0);
-    std::vector<uint32_t> par(total);
-    std::vector<char>     via(total);
+    const uint8_t ep = ws.begin(total);
+    std::vector<uint8_t>&  vis = ws.vis;
+    std::vector<uint32_t>& par = ws.par;
+    std::vector<char>&     via = ws.via;
 
     const int a0 = anc == ANC_NONE ? 0 : anc_at[anc + MAXV];
     const int r0 = con < 0 ? 0 : con_of[con];
     const long start = id(0, cell, a0, r0);
-    vis[start] = 1;
+    vis[start] = ep;
     std::queue<uint32_t> q;
     q.push(static_cast<uint32_t>(start));
     long goal = -1;
@@ -120,8 +147,8 @@ std::string solve(const std::string& text, int& cell, int& anc, int& con) {
         const int i  = static_cast<int>(r);
         if (i == N) { goal = u; break; }
         auto push = [&](long v, char op) {
-            if (!vis[v]) {
-                vis[v] = 1;
+            if (vis[v] != ep) {
+                vis[v] = ep;
                 par[v] = static_cast<uint32_t>(u);
                 via[v] = op;
                 q.push(static_cast<uint32_t>(v));
@@ -204,11 +231,12 @@ std::size_t chunk_len(const std::string& text, std::size_t pos, int anc, int con
 
 std::string translate(const std::string& text) {
     std::string prog;
+    Search ws;
     int cell = 0, anc = ANC_NONE, con = -1;
     std::size_t pos = 0;
     while (pos < text.size()) {
         const std::size_t len = chunk_len(text, pos, anc, con);
-        prog += solve(text.substr(pos, len), cell, anc, con);
+        prog += solve(text.substr(pos, len), cell, anc, con, ws);
         pos += len;
     }
     return prog;

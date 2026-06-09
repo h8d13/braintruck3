@@ -274,10 +274,20 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
 
 // Helpers extracted to keep run()'s computed-goto region free of non-trivial
 // destructors (GCC warns when CG could skip dtors of scoped objects).
+// Trit-token read without the per-call std::string of `cin >> tok` +
+// from_trits.  Same semantics: skip whitespace, consume the token, treat
+// non-trit chars in it as '0'.  Wrapping per step keeps the accumulator in
+// range for arbitrarily long tokens.
 static inline void exec_gettr(Cell& c) {
-    std::string tok;
-    std::cin >> tok;
-    c = Cell::from_trits(tok);
+    std::streambuf* sb = std::cin.rdbuf();
+    int ch = sb->sbumpc();
+    while (ch != EOF && std::isspace(static_cast<unsigned char>(ch)))
+        ch = sb->sbumpc();
+    int v = 0;
+    for (; ch != EOF && !std::isspace(static_cast<unsigned char>(ch));
+         ch = sb->sbumpc())
+        v = Cell::wrap(v * 3 + (ch == '+') - (ch == '-'));
+    c = Cell(v);
 }
 static inline void exec_getc(Cell& c) {
     int ch = std::cin.get();
