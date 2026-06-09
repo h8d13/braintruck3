@@ -46,7 +46,6 @@ With the fused families, 30 ops (`examples/arch_shorter.btf`):
 ```brainfuck
 +((){(RmT-/^_+R~PU~PRr/~^RrUP~
 ```
-17 of those 30 ops are prints themselves 
 
 `txt2btf` finds these by an exact layered BFS over interpreter state (chars
 printed, cell, anchor, constant register), so each is a shortest program, not
