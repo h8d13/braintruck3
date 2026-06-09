@@ -18,7 +18,7 @@ order `+ - * / ( )`:
 - `P M T D L R`: step on the cell, then print it (`R` = `).` in one op).
 - `U` / `p m t d l r`: cell = anchor (stepped for lowercase), then print.
 
-**P**lus, **M**inus, **T**imes, **D**iv, **L**eft, **R**right (horners)
+**P**lus, **M**inus, **T**imes, **D**iv, **L**eft, **R**ight (horners)
 
 - `& = $ % { }`: step on the cell, then anchor = cell (park a hub for free).
 
