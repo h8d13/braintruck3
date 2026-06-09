@@ -87,15 +87,28 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
         if (move_run != 0) ops.push_back({Op::MOVE, move_run});
         move_run = 0;
     };
-    // One arithmetic step accumulated into the affine run (g in "+-*/()";
-    // '/' truncates so it cannot compose and is emitted directly).
+    // '/' truncates so it cannot join the affine run.  Consecutive DIV3s
+    // merge into one op (arg = shift count); five shifts always reach 0 from
+    // the +-121 cell range, so a run of 5+ collapses to SET 0.
+    auto emit_div3 = [&]{
+        flush_affine();
+        if (!ops.empty() && ops.back().kind == Op::DIV3) {
+            if (++ops.back().arg >= 5) {
+                ops.pop_back();
+                emit_cell(Op::SET, 0);
+            }
+            return;
+        }
+        emit_cell(Op::DIV3, 1);
+    };
+    // One arithmetic step accumulated into the affine run (g in "+-*/()").
     auto cell_step = [&](char g) {
         switch (g) {
             case '+': b_run = Cell::wrap(b_run + 1); break;
             case '-': b_run = Cell::wrap(b_run - 1); break;
             case '*': a_run = a_run * 3 % 243;
                       b_run = Cell::wrap(b_run * 3); break;
-            case '/': flush_affine(); emit_cell(Op::DIV3); break;
+            case '/': emit_div3(); break;
             case '(': a_run = a_run * 3 % 243;
                       b_run = Cell::wrap(b_run * 3 + 1); break;
             case ')': a_run = a_run * 3 % 243;
@@ -270,6 +283,21 @@ static inline void exec_getc(Cell& c) {
     int ch = std::cin.get();
     c = Cell(ch == EOF ? 0 : ch);
 }
+// Balanced-ternary print without the per-call string allocations of
+// Cell::trits(): at most 5 trits from the +-121 range, built in place.
+static inline void exec_puttr(const Cell& c) {
+    int x = c.value();
+    if (x == 0) { std::cout.put('0'); return; }
+    char buf[8];
+    int n = 8;
+    while (x != 0) {
+        int r = ((x % 3) + 3) % 3;
+        if      (r == 0) { buf[--n] = '0'; x /= 3; }
+        else if (r == 1) { buf[--n] = '+'; x = (x - 1) / 3; }
+        else             { buf[--n] = '-'; x = (x + 1) / 3; }
+    }
+    std::cout.write(buf + n, 8 - n);
+}
 
 // Computed-goto dispatch (GCC/Clang labels-as-values).  Each handler ends
 // with NEXT() which jumps directly to the next op's handler   no shared
@@ -307,11 +335,19 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
 op_add:      tape[p] += op[pc].arg;                                   NEXT();
 op_move:     p += static_cast<ptr_t>(op[pc].arg);                     NEXT();
 op_mul3:     tape[p] *= 3;                                            NEXT();
-op_div3:     tape[p] /= 3;                                            NEXT();
+op_div3:     // arg = run length 1..4; constant divisors keep the
+             // magic-multiply codegen (no runtime idiv)
+    switch (op[pc].arg) {
+        case 1:  tape[p] /= 3;  break;
+        case 2:  tape[p] /= 9;  break;
+        case 3:  tape[p] /= 27; break;
+        default: tape[p] /= 81; break;
+    }
+    NEXT();
 op_sign:     tape[p].set_sign();                                      NEXT();
 op_putc:     std::cout.put(static_cast<char>(tape[p].to_byte()));     NEXT();
 op_getc:     exec_getc(tape[p]);                                      NEXT();
-op_puttr:    std::cout << tape[p].trits();                            NEXT();
+op_puttr:    exec_puttr(tape[p]);                                     NEXT();
 op_gettr:    exec_gettr(tape[p]);                                     NEXT();
 op_jz:       if ( tape[p].is_zero()) pc = static_cast<std::size_t>(op[pc].arg); NEXT();
 op_jnz:      if (!tape[p].is_zero()) pc = static_cast<std::size_t>(op[pc].arg); NEXT();
@@ -370,6 +406,11 @@ op_halt:      return 0;
 }
 
 int main(int argc, char* argv[]) {
+    // Unhook iostreams from C stdio: GETC/PUTC/PUTTR go straight to the
+    // streambuf instead of through the sync layer.
+    std::ios::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+
     ptr_t tape_size = DEFAULT_TAPE_SIZE;
     const char* prog_path = nullptr;
 
