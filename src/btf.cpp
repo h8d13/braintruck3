@@ -313,6 +313,10 @@ static inline void exec_puttr(const Cell& c) {
 // with NEXT() which jumps directly to the next op's handler   no shared
 // dispatch loop, fewer pipeline bubbles, branch predictor learns per-handler
 // successor patterns.  Order of `table` MUST match the Op::Kind enum.
+// Measured: this attribute alone is -11% on arithmetic and -29% on DIV3
+// loops (hot-section placement + label layout for the computed goto);
+// alignas on the dispatch table and [[likely]] branch hints measured zero.
+__attribute__((hot))
 static int run(const std::vector<Op>& ops, ptr_t tape_size) {
     std::vector<Cell> tape_vec(tape_size);
     Cell* const tape = tape_vec.data();      // raw pointer: no operator[] indirection
