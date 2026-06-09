@@ -55,7 +55,11 @@ public:
             return static_cast<storage_t>(x - MOD);
         if (x < -MAX_VAL && x >= -MAX_VAL - MOD)
             return static_cast<storage_t>(x + MOD);
-        x = ((x + MAX_VAL) % MOD + MOD) % MOD - MAX_VAL;
+        // General case (AFFINE feeds up to |a*v + b| <= 81*121 + 121 here):
+        // one truncating %, then one +-MOD nudge into the balanced range.
+        x %= MOD;
+        if (x > MAX_VAL)  x -= MOD;
+        if (x < -MAX_VAL) x += MOD;
         return static_cast<storage_t>(x);
     }
 

@@ -38,22 +38,26 @@ static std::string strip_comments(const std::string& raw) {
 static std::vector<Op> compile(const std::string& src, std::string& err) {
     std::vector<Op> ops;
     std::stack<std::size_t> bracket_stack;
-    std::int32_t add_run  = 0;
     std::int32_t move_run = 0;
 
-    // flush_add folds into a preceding SET when possible:
-    //   SET k; ADD m  ==>  SET (k+m)   (the fold is exact under the wrap;
-    //   wrap distributes over + so the runtime gets the same value).
+    // Affine accumulator: a straight-line run of + - * ( ) composes to
+    // cell = a*cell + b (mod 243).  a stays a power of 3 and hits 0 after
+    // five multiplies (3^5 == 243 == 0), so a whole build folds into a
+    // single ADD (a == 1), SET (a == 0) or AFFINE op at flush.
+    std::int32_t a_run = 1, b_run = 0;
+
     // Constant-fold a cell-only op into a preceding SET.  Returns true if
-    // folded (caller should not also push).  Cell-only kinds: ADD, MUL3,
-    // DIV3, SIGN, SET (the latter being dead-SET elim).
+    // folded (caller should not also push).  The fold is exact under the
+    // wrap: wrap distributes over the affine ops, and the runtime Cell(arg)
+    // constructor wraps the folded constant.
     auto fold_into_set = [&](Op::Kind k, std::int32_t arg) -> bool {
         if (ops.empty() || ops.back().kind != Op::SET) return false;
         switch (k) {
             case Op::ADD:  ops.back().arg += arg;            return true;
-            case Op::MUL3: ops.back().arg *= 3;              return true;
-            case Op::MUL3_INC: ops.back().arg = ops.back().arg * 3 + 1; return true;
-            case Op::MUL3_DEC: ops.back().arg = ops.back().arg * 3 - 1; return true;
+            case Op::AFFINE:
+                ops.back().arg = (arg >> 16) * Cell::wrap(ops.back().arg) +
+                                 static_cast<std::int16_t>(arg & 0xFFFF);
+                return true;
             case Op::DIV3: ops.back().arg /= 3;              return true;
             case Op::SIGN: {
                 std::int32_t v = ops.back().arg;
@@ -68,79 +72,91 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
         if (!fold_into_set(k, arg)) ops.push_back({k, arg});
     };
 
-    auto flush_add = [&]{
-        if (add_run != 0) {
-            emit_cell(Op::ADD, add_run);
-            add_run = 0;
+    auto flush_affine = [&]{
+        if (a_run == 1) {
+            if (b_run != 0) emit_cell(Op::ADD, b_run);
+        } else if (a_run == 0) {
+            emit_cell(Op::SET, b_run);
+        } else {
+            emit_cell(Op::AFFINE, (a_run << 16) | (b_run & 0xFFFF));
         }
+        a_run = 1;
+        b_run = 0;
     };
     auto flush_move = [&]{
         if (move_run != 0) ops.push_back({Op::MOVE, move_run});
         move_run = 0;
     };
-    // One arithmetic step for the fused glyph families (g in "+-*/()").
+    // One arithmetic step accumulated into the affine run (g in "+-*/()";
+    // '/' truncates so it cannot compose and is emitted directly).
     auto cell_step = [&](char g) {
         switch (g) {
-            case '+': emit_cell(Op::ADD, +1); break;
-            case '-': emit_cell(Op::ADD, -1); break;
-            case '*': emit_cell(Op::MUL3);     break;
-            case '/': emit_cell(Op::DIV3);     break;
-            case '(': emit_cell(Op::MUL3_INC); break;
-            case ')': emit_cell(Op::MUL3_DEC); break;
+            case '+': b_run = Cell::wrap(b_run + 1); break;
+            case '-': b_run = Cell::wrap(b_run - 1); break;
+            case '*': a_run = a_run * 3 % 243;
+                      b_run = Cell::wrap(b_run * 3); break;
+            case '/': flush_affine(); emit_cell(Op::DIV3); break;
+            case '(': a_run = a_run * 3 % 243;
+                      b_run = Cell::wrap(b_run * 3 + 1); break;
+            case ')': a_run = a_run * 3 % 243;
+                      b_run = Cell::wrap(b_run * 3 - 1); break;
         }
     };
 
     for (std::size_t i = 0; i < src.size(); ++i) {
         char c = src[i];
         switch (c) {
-            case '+': flush_move(); ++add_run; break;
-            case '-': flush_move(); --add_run; break;
-            case '>': flush_add();  ++move_run; break;
-            case '<': flush_add();  --move_run; break;
-            case '*': flush_add(); flush_move(); emit_cell(Op::MUL3); break;
-            case '(': flush_add(); flush_move(); emit_cell(Op::MUL3_INC); break;
-            case ')': flush_add(); flush_move(); emit_cell(Op::MUL3_DEC); break;
-            case '/': flush_add(); flush_move(); emit_cell(Op::DIV3); break;
-            case '?': flush_add(); flush_move(); emit_cell(Op::SIGN); break;
-            case '.': flush_add(); flush_move(); ops.push_back({Op::PUTC,  0}); break;
-            case '!': flush_add(); flush_move(); ops.push_back({Op::PUTC_RES, 0}); break;
-            case ',': flush_add(); flush_move(); ops.push_back({Op::GETC,  0}); break;
-            case ':': flush_add(); flush_move(); ops.push_back({Op::PUTTR, 0}); break;
-            case ';': flush_add(); flush_move(); ops.push_back({Op::GETTR, 0}); break;
-            case '^': flush_add(); flush_move(); ops.push_back({Op::REG_STORE, 0}); break;
-            case '~': flush_add(); flush_move(); ops.push_back({Op::REG_PUT,   0}); break;
-            case '@': flush_add(); flush_move(); ops.push_back({Op::ANC_STORE, 0}); break;
-            case '_': flush_add(); flush_move(); ops.push_back({Op::ANC_RECALL,0}); break;
+            case '+': flush_move(); cell_step('+'); break;
+            case '-': flush_move(); cell_step('-'); break;
+            case '>': flush_affine();  ++move_run; break;
+            case '<': flush_affine();  --move_run; break;
+            case '*': flush_move(); cell_step('*'); break;
+            case '(': flush_move(); cell_step('('); break;
+            case ')': flush_move(); cell_step(')'); break;
+            case '/': flush_move(); cell_step('/'); break;
+            case '?': flush_affine(); flush_move(); emit_cell(Op::SIGN); break;
+            case '.': flush_affine(); flush_move(); ops.push_back({Op::PUTC,  0}); break;
+            case '!': flush_affine(); flush_move(); ops.push_back({Op::PUTC_RES, 0}); break;
+            case ',': flush_affine(); flush_move(); ops.push_back({Op::GETC,  0}); break;
+            case ':': flush_affine(); flush_move(); ops.push_back({Op::PUTTR, 0}); break;
+            case ';': flush_affine(); flush_move(); ops.push_back({Op::GETTR, 0}); break;
+            case '^': flush_affine(); flush_move(); ops.push_back({Op::REG_STORE, 0}); break;
+            case '~': flush_affine(); flush_move(); ops.push_back({Op::REG_PUT,   0}); break;
+            case '@': flush_affine(); flush_move(); ops.push_back({Op::ANC_STORE, 0}); break;
+            case '_': flush_affine(); flush_move(); ops.push_back({Op::ANC_RECALL,0}); break;
             // Fused families: macro-expansions over existing IR, so the
             // interpreter needs no new op kinds.
             case 'P': case 'M': case 'T': case 'D': case 'L': case 'R':
-                flush_add(); flush_move();
+                flush_move();
                 cell_step("+-*/()"[std::string_view("PMTDLR").find(c)]);
+                flush_affine();
                 ops.push_back({Op::PUTC, 0});
                 break;
             case 'U':
-                flush_add(); flush_move();
+                flush_affine(); flush_move();
                 ops.push_back({Op::ANC_RECALL, 0});
                 ops.push_back({Op::PUTC, 0});
                 break;
             case 'p': case 'm': case 't': case 'd': case 'l': case 'r':
-                flush_add(); flush_move();
+                flush_affine(); flush_move();
                 ops.push_back({Op::ANC_RECALL, 0});
                 cell_step("+-*/()"[std::string_view("pmtdlr").find(c)]);
+                flush_affine();
                 ops.push_back({Op::PUTC, 0});
                 break;
             case '&': case '=': case '$': case '%': case '{': case '}':
-                flush_add(); flush_move();
+                flush_move();
                 cell_step("+-*/()"[std::string_view("&=$%{}").find(c)]);
+                flush_affine();
                 ops.push_back({Op::ANC_STORE, 0});
                 break;
             case '[':
-                flush_add(); flush_move();
+                flush_affine(); flush_move();
                 bracket_stack.push(ops.size());
                 ops.push_back({Op::JZ, 0});  // patched at matching ']'
                 break;
             case ']':
-                flush_add(); flush_move();
+                flush_affine(); flush_move();
                 if (bracket_stack.empty()) {
                     err = "unmatched ']' at byte " + std::to_string(i);
                     return {};
@@ -170,8 +186,11 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
                     // [*] / [/]  ==>  SET 0.  Each shifts the cell by one trit
                     // per iter and reaches 0 within 5 iters (since 3^5 ≡ 0
                     // mod 243 in balanced ternary; div truncates toward 0).
-                    else if (blen == 1 && (ops[body].kind == Op::MUL3 ||
-                                           ops[body].kind == Op::DIV3)) {
+                    // '*'-runs reach the body as AFFINE(a, 0) with a = 3^k.
+                    else if (blen == 1 &&
+                             (ops[body].kind == Op::DIV3 ||
+                              (ops[body].kind == Op::AFFINE &&
+                               static_cast<std::int16_t>(ops[body].arg & 0xFFFF) == 0))) {
                         ops.resize(open);
                         emit_cell(Op::SET, 0);
                         peeped = true;
@@ -229,13 +248,14 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
             default: break;  // whitespace / unknown ignored
         }
     }
-    flush_add();
+    flush_affine();
     flush_move();
 
     if (!bracket_stack.empty()) {
         err = "unmatched '[' at op " + std::to_string(bracket_stack.top());
         return {};
     }
+    ops.push_back({Op::HALT, 0});
     return ops;
 }
 
@@ -259,13 +279,12 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
     std::vector<Cell> tape_vec(tape_size);
     Cell* const tape = tape_vec.data();      // raw pointer: no operator[] indirection
     const Op* const op = ops.data();         // same for the IR
-    const std::size_t n = ops.size();
     ptr_t p = 0;
     std::size_t pc = 0;
     Cell R{};                                // constant register (^ store, ~ print)
     Cell A{};                                // anchor register   (@ store, _ recall)
 
-    if (n == 0) return 0;
+    if (ops.empty()) return 0;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -276,10 +295,12 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
         &&op_set, &&op_move_add, &&op_move_sub,
         &&op_add_at, &&op_sub_at, &&op_scan,
         &&op_reg_store, &&op_reg_put, &&op_anc_store, &&op_anc_recall,
-        &&op_mul3_inc, &&op_mul3_dec, &&op_putc_res
+        &&op_mul3_inc, &&op_mul3_dec, &&op_putc_res,
+        &&op_affine, &&op_halt
     };
-#define NEXT() do { if (++pc >= n) return 0; \
-                    goto *table[op[pc].kind]; } while (0)
+// compile() terminates every program with HALT, so dispatch needs no
+// pc bound check.
+#define NEXT() do { goto *table[op[++pc].kind]; } while (0)
 
     goto *table[op[pc].kind];
 
@@ -337,6 +358,13 @@ op_anc_recall: tape[p] = A;                                           NEXT();
 op_mul3_inc:  tape[p] *= 3; tape[p] += 1;                             NEXT();
 op_mul3_dec:  tape[p] *= 3; tape[p] -= 1;                             NEXT();
 op_putc_res:  std::cout.put(static_cast<char>(tape[p].to_byte_low())); NEXT();
+op_affine: {
+    const std::int32_t g = op[pc].arg;
+    tape[p] = Cell((g >> 16) * tape[p].value() +
+                   static_cast<std::int16_t>(g & 0xFFFF));
+    NEXT();
+}
+op_halt:      return 0;
 #undef NEXT
 #pragma GCC diagnostic pop
 }

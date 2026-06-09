@@ -32,7 +32,14 @@ struct Op {
         MUL3_DEC,   // )  : cell = cell*3 - 1
         // Residue print: emit v mod 243 as a low byte (0..242), reaching the
         // 122..134 band that PUTC's two's-complement byte cast skips over.
-        PUTC_RES    // !  : print to_byte_low()
+        PUTC_RES,   // !  : print to_byte_low()
+        // Any straight-line run of + - * ( ) composes to cell = a*cell + b
+        // (mod 243, with a a power of 3 since 3^5 == 0): the compiler folds
+        // whole builds into one op.  arg packs a in the high 16 bits and b
+        // (signed) in the low 16.
+        AFFINE,     // cell = (arg>>16)*cell + (int16)arg
+        HALT        // end of program (terminal sentinel; drops the pc bound
+                    // check from the dispatch hot path)
     } kind;
     std::int32_t arg;
 };
