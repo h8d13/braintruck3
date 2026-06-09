@@ -1,0 +1,4 @@
+# txt2btf output for 'café': the é is UTF-8 c3 a9 (bytes 195, 169). Both
+# ride the negative cell range and print via '.', so multibyte/UTF-8 text
+# survives intact. 23 ops.
++()**.--./++*.-().*)(*.

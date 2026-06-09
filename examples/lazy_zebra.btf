@@ -1,0 +1,3 @@
+# txt2btf output for 'lazy zebra': uses '!' (residue print) for the two
+# z's (122), which fall in the 122..134 dead band of '.' (to_byte). 42 ops.
++(()*@+++*._-(.--))!-._)/.)))!_+)./)._.-(.

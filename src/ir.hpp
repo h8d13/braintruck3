@@ -29,7 +29,10 @@ struct Op {
         // Fused Horner step: one trit shift plus its sign in a single op, so a
         // balanced-ternary build costs ~one op per trit instead of '*' + '+'/'-'.
         MUL3_INC,   // (  : cell = cell*3 + 1
-        MUL3_DEC    // )  : cell = cell*3 - 1
+        MUL3_DEC,   // )  : cell = cell*3 - 1
+        // Residue print: emit v mod 243 as a low byte (0..242), reaching the
+        // 122..134 band that PUTC's two's-complement byte cast skips over.
+        PUTC_RES    // !  : print to_byte_low()
     } kind;
     std::int32_t arg;
 };

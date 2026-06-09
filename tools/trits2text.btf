@@ -1,4 +1,6 @@
 # trits2text: decode a stream of +0- trit-strings (whitespace-separated) to text.
-# ; reads one token into a cell, [.;] prints it as a char and reads the next.
-# Inverse of the : op (and of hello_trits' trit output). Reads stdin.
-;[.;]
+# ; reads one token into a cell, [!;] prints it as a char and reads the next.
+# '!' is the residue print: it renders a cell as its mod-243 byte (0..242), so
+# the decode covers 0..242 (z and UTF-8 included) and round-trips text2trits.
+# ASCII 0..121 is identical to '.'; only the 122..242 band differs.
+;[!;]

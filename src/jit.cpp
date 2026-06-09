@@ -59,7 +59,7 @@ bool BtfJit::can_compile(const std::vector<Op>& ops) {
     for (const Op& op : ops) {
         switch (op.kind) {
             case Op::SCAN: case Op::SIGN:
-            case Op::PUTTR: case Op::GETTR: case Op::GETC:
+            case Op::PUTTR: case Op::GETTR: case Op::GETC: case Op::PUTC_RES:
             case Op::MOVE_ADD: case Op::MOVE_SUB:
             case Op::ADD_AT:   case Op::SUB_AT:
             case Op::REG_STORE: case Op::REG_PUT:

@@ -65,48 +65,64 @@ std::string reach(int from, int to) {
     }
     return path[idx(to)];  // unreachable: {+1,x3} alone already span the ring
 }
+
+// How to print byte b: the cell value to build, and the print op for it.
+//   0..121    cell == b,        '.'  (to_byte is the identity here)
+//   122..134  cell == b - 243,  '!'  (dead band: residue print, cells -121..-109)
+//   135..255  cell == b - 256,  '.'  (high bytes ride the negative cell range)
+struct Enc { int target; char term; };
+Enc encode(int b) {
+    if (b <= 121) return {b, '.'};
+    if (b <= 134) return {b - 243, '!'};
+    return {b - 256, '.'};
+}
 }  // namespace
 
 // Emit `text`, optionally parking one byte in the constant register (reg, for
 // cheap reprints via ~) and one in the anchor register (anc, a build base
 // recalled via _ then nudged by a small diff).  reg/anc < 0 = unused.
+// reg/anc are byte values (or <0 = unused). The cell holds signed build values,
+// so both park their encoded target; reg must be a '.'-printable byte (its only
+// output path is '~' == to_byte), the caller filters the dead band out of it.
 static std::string gen(const std::string& text, int reg, int anc) {
     std::string prog;
     int prev = 0;
     bool started = false;
+    int anc_base = anc >= 0 ? encode(anc).target : 0;
 
     if (anc >= 0) {                 // build the anchor base once, store it
-        prog += reach(0, anc);
+        prog += reach(0, anc_base);
         prog += '@';
-        prev = anc;
+        prev = anc_base;
         started = true;
     }
     if (reg >= 0) {                 // build the register char once, store it
         if (started) prog += '>';   // on a fresh cell, leaving the anchor cell
-        prog += reach(0, reg);
+        prog += reach(0, encode(reg).target);
         prog += '^';
-        prev = reg;                 // the build cell becomes the running cell
+        prev = encode(reg).target;  // the build cell becomes the running cell
         started = true;
     }
 
     for (char ch : text) {
-        int v = static_cast<unsigned char>(ch);
-        if (reg >= 0 && v == reg) { prog += '~'; continue; }
+        int b = static_cast<unsigned char>(ch);
+        if (reg >= 0 && b == reg) { prog += '~'; continue; }
+        Enc e = encode(b);
         if (!started) {             // first char built directly into cell0 (==0)
-            prog += reach(0, v) + '.';
+            prog += reach(0, e.target) + e.term;
             started = true;
-            prev = v;
+            prev = e.target;
             continue;
         }
-        std::string best = reach(prev, v);            // affine on the running cell
-        std::string fresh = '>' + reach(0, v);        // absolute build, fresh cell
+        std::string best = reach(prev, e.target);     // affine on the running cell
+        std::string fresh = '>' + reach(0, e.target); // absolute build, fresh cell
         if (fresh.size() < best.size()) best = fresh;
         if (anc >= 0) {                               // recall anchor + reach
-            std::string rec = '_' + reach(anc, v);
+            std::string rec = '_' + reach(anc_base, e.target);
             if (rec.size() < best.size()) best = rec;
         }
-        prog += best + '.';
-        prev = v;
+        prog += best + e.term;
+        prev = e.target;
     }
     return prog;
 }
@@ -125,17 +141,22 @@ int main(int argc, char** argv) {
     }
 
     // Search every (register, anchor) pair over the distinct chars (plus "none"
-    // for each), keep the shortest. Each is a candidate base/frequent char.
-    std::vector<int> cands = {-1};
+    // for each), keep the shortest. anc is any char (a build base); reg prints
+    // via '~' == to_byte, so dead-band bytes (122..134) are excluded from it.
+    std::vector<int> anc_cands = {-1};
+    std::vector<int> reg_cands = {-1};
     bool seen[256] = {};
     for (char ch : text) {
         int c = static_cast<unsigned char>(ch);
-        if (!seen[c]) { seen[c] = true; cands.push_back(c); }
+        if (seen[c]) continue;
+        seen[c] = true;
+        anc_cands.push_back(c);
+        if (c < 122 || c > 134) reg_cands.push_back(c);
     }
 
     std::string best = gen(text, -1, -1);
-    for (int reg : cands)
-        for (int anc : cands) {
+    for (int reg : reg_cands)
+        for (int anc : anc_cands) {
             std::string cand = gen(text, reg, anc);
             if (cand.size() < best.size()) best = cand;
         }

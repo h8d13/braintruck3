@@ -93,6 +93,7 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
             case '/': flush_add(); flush_move(); emit_cell(Op::DIV3); break;
             case '?': flush_add(); flush_move(); emit_cell(Op::SIGN); break;
             case '.': flush_add(); flush_move(); ops.push_back({Op::PUTC,  0}); break;
+            case '!': flush_add(); flush_move(); ops.push_back({Op::PUTC_RES, 0}); break;
             case ',': flush_add(); flush_move(); ops.push_back({Op::GETC,  0}); break;
             case ':': flush_add(); flush_move(); ops.push_back({Op::PUTTR, 0}); break;
             case ';': flush_add(); flush_move(); ops.push_back({Op::GETTR, 0}); break;
@@ -242,7 +243,7 @@ static int run(const std::vector<Op>& ops, ptr_t tape_size) {
         &&op_set, &&op_move_add, &&op_move_sub,
         &&op_add_at, &&op_sub_at, &&op_scan,
         &&op_reg_store, &&op_reg_put, &&op_anc_store, &&op_anc_recall,
-        &&op_mul3_inc, &&op_mul3_dec
+        &&op_mul3_inc, &&op_mul3_dec, &&op_putc_res
     };
 #define NEXT() do { if (++pc >= n) return 0; \
                     goto *table[op[pc].kind]; } while (0)
@@ -302,6 +303,7 @@ op_anc_store:  A = tape[p];                                           NEXT();
 op_anc_recall: tape[p] = A;                                           NEXT();
 op_mul3_inc:  tape[p] *= 3; tape[p] += 1;                             NEXT();
 op_mul3_dec:  tape[p] *= 3; tape[p] -= 1;                             NEXT();
+op_putc_res:  std::cout.put(static_cast<char>(tape[p].to_byte_low())); NEXT();
 #undef NEXT
 #pragma GCC diagnostic pop
 }

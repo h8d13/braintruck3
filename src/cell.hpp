@@ -20,6 +20,12 @@ public:
     constexpr unsigned char to_byte() const {
         return static_cast<unsigned char>(v_);
     }
+    // Residue byte: resolve v mod 243 into the low range 0..242 instead of the
+    // int8 two's-complement byte.  Lets '!' reach 122..134 (the bytes to_byte
+    // skips) from the in-range cell values -121..-109.
+    constexpr unsigned char to_byte_low() const {
+        return static_cast<unsigned char>(v_ < 0 ? v_ + MOD : v_);
+    }
 
     Cell& operator++()      { v_ = wrap(v_ + 1); return *this; }
     Cell& operator--()      { v_ = wrap(v_ - 1); return *this; }
