@@ -25,14 +25,19 @@ Hand-written brainfuck, "Arch is the best!", 203 ops:
 >>+.++++++++++.<<.>>+.------------.---.<<.>>---.
 +++.++++++++++++++.+.<<+.[-]++++++++++.
 ```
-Same but with our new op types.
+Same but with our new op types, 47 ops:
 ```brainfuck
-+(()(@>+())^_()._-.*._+).~+._.~+.)./).~/)._)._.+.-)/.
++(()(@()._-.*.-/^_+).+~._.+~.)./)./~^)._)._.+.~
 ```
 
-`txt2btf` reaches each char by a BFS over `+ - * / ( )`, so a letter lands as a
+`txt2btf` finds this by an exact layered BFS over interpreter state (chars
+printed, cell, anchor, constant register), so it is a shortest program, not a
+heuristic: 17 of the 47 ops are the prints themselves. A letter lands as a
 fused-Horner build or a multiply off the value already in the cell (`115` is
-`+(()(`) rather than a from-zero `*`-build. 
+`+(()(`), the anchor parks the `s`/`t`/`h` cluster, and the constant register
+is re-stored mid-run (space, then `!`) when a park value floats by as a `/`
+byproduct. Long inputs are chunked to a state budget, carrying the running
+state across seams.
 
 You can test the round trip easily.
 

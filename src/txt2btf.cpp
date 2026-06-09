@@ -1,84 +1,188 @@
 // txt2btf: text -> btf source. Emits a program that prints the input verbatim.
 //
-// Per char, the generator reaches the target value by the cheapest of:
-//   (a) affine ops on the running cell:  reach(prev, v) then '.'
-//   (b) an absolute build in a fresh cell:  '>' then reach(0, v) then '.'
-//   (c) anchor recall + affine:  '_' then reach(anchor, v) then '.'
-// reach() is a BFS over the ops the cell already supports (+1, -1, x3, /3), so
-// it finds the shortest path whether that's a unary walk, a from-zero Horner
-// build, or a multiply off the value already in the cell (e.g. (32+1)*3 == 99,
-// '+*', far cheaper than rebuilding a letter from scratch).
+// Exact search: a layered BFS over interpreter state (chars printed, cell
+// value, anchor register, constant register). All ops cost 1, so the first
+// path reaching "all chars printed" is a shortest program. This subsumes the
+// old per-char greedy: it derives the next char from whatever the cell,
+// anchor, or a '/'-byproduct happens to offer, re-stores the constant
+// register mid-program when a cheaper park value floats by, and places '@'
+// anywhere instead of only at program start.
 //
-// Two registers help further:
-//   - constant register (^/~): park a frequent char, emit each occurrence as a
-//     single '~'. Keeps it out of the running cell, so neighbours don't jump
-//     to/from it (e.g. spaces far below a run of letters).
-//   - anchor register (@/_): park a build base; chars near it become '_' + a
-//     small reach instead of a full from-zero build (a tight cluster of letters).
-// The best (register, anchor) pair is chosen by trying every combination over
-// the distinct characters and keeping the shortest program.
+// Modeled ops: cell arithmetic (+ - * / ( )), '>' onto a fresh cell (the
+// pointer only ever moves right, so the target cell is always 0), '@'/'_'
+// anchor store/recall, '^'/'~' constant store/print, '.'/'!' prints.
+// Candidate registers are restricted to values the program could actually
+// use: anchors to the encode-targets of the text's chars, constants to its
+// printable bytes. '?' and loops never pay for themselves on straight text.
+//
+// Long inputs are split into chunks sized to a state budget; the running
+// (cell, anchor, constant) state carries across the boundary, so only the
+// chunk seams lose optimality.
 //
 // Text comes from argv (joined with spaces) or stdin if no args.
 
 #include "reach.hpp"
 
+#include <cstdint>
 #include <iostream>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <vector>
 
-using btf::reach;
 using btf::encode;
-using btf::Enc;
+using btf::wrap;
+using btf::MAXV;
 
-// Emit `text`, optionally parking one byte in the constant register (reg, for
-// cheap reprints via ~) and one in the anchor register (anc, a build base
-// recalled via _ then nudged by a small diff).  reg/anc < 0 = unused.
-// reg/anc are byte values (or <0 = unused). The cell holds signed build values,
-// so both park their encoded target; reg must be a '.'-printable byte (its only
-// output path is '~' == to_byte), the caller filters the dead band out of it.
-static std::string gen(const std::string& text, int reg, int anc) {
+namespace {
+
+constexpr int  ANC_NONE   = 999;        // anchor register empty
+constexpr long MAX_STATES = 16L << 20;  // per-chunk search budget (~100 MB)
+
+bool dead_band(int b) { return b >= 122 && b <= 134; }  // '~' can't print these
+
+// Exact shortest program printing `text` from entry state (cell, anc, con);
+// all three are updated to the exit state for the next chunk.
+std::string solve(const std::string& text, int& cell, int& anc, int& con) {
+    const int N = static_cast<int>(text.size());
+
+    // Candidate sets. Index 0 is always "empty"; the carried-in values must
+    // be present to encode the entry state.
+    std::vector<int> ancs = {ANC_NONE};
+    std::vector<int> cons = {-1};
+    bool sa[btf::MOD] = {}, sc[256] = {};
+    auto add_anc = [&](int v) {
+        if (v == ANC_NONE) return;
+        if (!sa[v + MAXV]) { sa[v + MAXV] = true; ancs.push_back(v); }
+    };
+    auto add_con = [&](int b) {
+        if (b < 0 || dead_band(b)) return;
+        if (!sc[b]) { sc[b] = true; cons.push_back(b); }
+    };
+    add_anc(anc);
+    add_con(con);
+    for (unsigned char ch : text) {
+        add_anc(encode(ch).target);
+        add_con(ch);
+    }
+    const int A = static_cast<int>(ancs.size());
+    const int R = static_cast<int>(cons.size());
+
+    // cell value -> candidate index (or -1): '@' targets, '^' park values
+    // (encode is injective, so a park value names at most one constant),
+    // and byte -> constant index for the '~' print check.
+    std::vector<int> anc_at(btf::MOD, -1), park_at(btf::MOD, -1), con_of(256, -1);
+    for (int i = 1; i < A; ++i) anc_at[ancs[i] + MAXV] = i;
+    for (int i = 1; i < R; ++i) {
+        park_at[encode(cons[i]).target + MAXV] = i;
+        con_of[cons[i]] = i;
+    }
+
+    const long per   = static_cast<long>(btf::MOD) * A * R;
+    const long total = (N + 1) * per;
+    auto id = [&](int i, int c, int ai, int ri) {
+        return ((static_cast<long>(i) * btf::MOD + (c + MAXV)) * A + ai) * R + ri;
+    };
+    std::vector<uint8_t>  vis(total, 0);
+    std::vector<uint32_t> par(total);
+    std::vector<char>     via(total);
+
+    const int a0 = anc == ANC_NONE ? 0 : anc_at[anc + MAXV];
+    const int r0 = con < 0 ? 0 : con_of[con];
+    const long start = id(0, cell, a0, r0);
+    vis[start] = 1;
+    std::queue<uint32_t> q;
+    q.push(static_cast<uint32_t>(start));
+    long goal = -1;
+
+    while (!q.empty()) {
+        const long u = q.front();
+        q.pop();
+        long r = u;
+        const int ri = static_cast<int>(r % R); r /= R;
+        const int ai = static_cast<int>(r % A); r /= A;
+        const int c  = static_cast<int>(r % btf::MOD) - MAXV; r /= btf::MOD;
+        const int i  = static_cast<int>(r);
+        if (i == N) { goal = u; break; }
+        auto push = [&](long v, char op) {
+            if (!vis[v]) {
+                vis[v] = 1;
+                par[v] = static_cast<uint32_t>(u);
+                via[v] = op;
+                q.push(static_cast<uint32_t>(v));
+            }
+        };
+
+        const std::pair<int, char> nbr[] = {
+            {wrap(c + 1),     '+'}, {wrap(c - 1),     '-'},
+            {wrap(c * 3),     '*'}, {c / 3,           '/'},
+            {wrap(c * 3 + 1), '('}, {wrap(c * 3 - 1), ')'},
+        };
+        for (auto [v, op] : nbr) push(id(i, v, ai, ri), op);
+        push(id(i, 0, ai, ri), '>');
+        if (anc_at[c + MAXV] >= 0)  push(id(i, c, anc_at[c + MAXV], ri), '@');
+        if (ai > 0)                 push(id(i, ancs[ai], ai, ri), '_');
+        if (park_at[c + MAXV] >= 0) push(id(i, c, ai, park_at[c + MAXV]), '^');
+
+        const int b = static_cast<unsigned char>(text[i]);
+        const btf::Enc e = encode(b);
+        if (c == e.target)              push(id(i + 1, c, ai, ri), e.term);
+        if (ri > 0 && cons[ri] == b)    push(id(i + 1, c, ai, ri), '~');
+    }
+
+    // unreachable: '+' alone spans the ring, so every print is reachable
+    if (goal < 0) return "";
+
+    long r = goal;
+    const int ri = static_cast<int>(r % R); r /= R;
+    const int ai = static_cast<int>(r % A); r /= A;
+    cell = static_cast<int>(r % btf::MOD) - MAXV;
+    anc  = ai > 0 ? ancs[ai] : ANC_NONE;
+    con  = ri > 0 ? cons[ri] : -1;
+
     std::string prog;
-    int prev = 0;
-    bool started = false;
-    int anc_base = anc >= 0 ? encode(anc).target : 0;
+    for (long u = goal; u != start; u = par[u]) prog += via[u];
+    for (std::size_t a = 0, z = prog.size() - 1; a < z; ++a, --z)
+        std::swap(prog[a], prog[z]);
+    return prog;
+}
 
-    if (anc >= 0) {                 // build the anchor base once, store it
-        prog += reach(0, anc_base);
-        prog += '@';
-        prev = anc_base;
-        started = true;
+// Largest prefix of text[pos..] whose search fits MAX_STATES (always >= 1).
+std::size_t chunk_len(const std::string& text, std::size_t pos, int anc, int con) {
+    bool sa[btf::MOD] = {}, sc[256] = {};
+    long A = 1, R = 1;
+    if (anc != ANC_NONE) { sa[anc + MAXV] = true; ++A; }
+    if (con >= 0)        { sc[con] = true; ++R; }
+    std::size_t len = 0;
+    while (pos + len < text.size()) {
+        const int b = static_cast<unsigned char>(text[pos + len]);
+        const int t = encode(b).target + MAXV;
+        long a = A + !sa[t], r = R + (!dead_band(b) && !sc[b]);
+        if (len > 0 &&
+            static_cast<long>(len + 2) * btf::MOD * a * r > MAX_STATES)
+            break;
+        sa[t] = true;
+        if (!dead_band(b)) sc[b] = true;
+        A = a;
+        R = r;
+        ++len;
     }
-    if (reg >= 0) {                 // build the register char once, store it
-        if (started) prog += '>';   // on a fresh cell, leaving the anchor cell
-        prog += reach(0, encode(reg).target);
-        prog += '^';
-        prev = encode(reg).target;  // the build cell becomes the running cell
-        started = true;
-    }
+    return len;
+}
 
-    for (char ch : text) {
-        int b = static_cast<unsigned char>(ch);
-        if (reg >= 0 && b == reg) { prog += '~'; continue; }
-        Enc e = encode(b);
-        if (!started) {             // first char built directly into cell0 (==0)
-            prog += reach(0, e.target) + e.term;
-            started = true;
-            prev = e.target;
-            continue;
-        }
-        std::string best = reach(prev, e.target);     // affine on the running cell
-        std::string fresh = '>' + reach(0, e.target); // absolute build, fresh cell
-        if (fresh.size() < best.size()) best = fresh;
-        if (anc >= 0) {                               // recall anchor + reach
-            std::string rec = '_' + reach(anc_base, e.target);
-            if (rec.size() < best.size()) best = rec;
-        }
-        prog += best + e.term;
-        prev = e.target;
+std::string translate(const std::string& text) {
+    std::string prog;
+    int cell = 0, anc = ANC_NONE, con = -1;
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        const std::size_t len = chunk_len(text, pos, anc, con);
+        prog += solve(text.substr(pos, len), cell, anc, con);
+        pos += len;
     }
     return prog;
 }
+
+}  // namespace
 
 int main(int argc, char** argv) {
     std::string text;
@@ -93,26 +197,7 @@ int main(int argc, char** argv) {
         text = ss.str();
     }
 
-    // Search every (register, anchor) pair over the distinct chars (plus "none"
-    // for each), keep the shortest. anc is any char (a build base); reg prints
-    // via '~' == to_byte, so dead-band bytes (122..134) are excluded from it.
-    std::vector<int> anc_cands = {-1};
-    std::vector<int> reg_cands = {-1};
-    bool seen[256] = {};
-    for (char ch : text) {
-        int c = static_cast<unsigned char>(ch);
-        if (seen[c]) continue;
-        seen[c] = true;
-        anc_cands.push_back(c);
-        if (c < 122 || c > 134) reg_cands.push_back(c);
-    }
-
-    std::string best = gen(text, -1, -1);
-    for (int reg : reg_cands)
-        for (int anc : anc_cands) {
-            std::string cand = gen(text, reg, anc);
-            if (cand.size() < best.size()) best = cand;
-        }
+    const std::string best = translate(text);
 
     // Wrap to keep lines readable; whitespace is ignored by the interpreter.
     constexpr std::size_t WIDTH = 72;

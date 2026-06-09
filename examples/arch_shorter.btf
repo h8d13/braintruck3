@@ -1,2 +1,3 @@
-# txt2btf output for 'Arch is the best!': register (~)=space + anchor (@/_)=115 base, 53 ops
-+(()(@>+())^_()._-.*._+).~+._.~+.)./).~/)._)._.+.-)/.
+# txt2btf output for 'Arch is the best!': exact layered BFS, anchor (@/_)=115
+# hub, constant (^/~) re-stored mid-run (space, then '!'), 47 ops
++(()(@()._-.*.-/^_+).+~._.+~.)./)./~^)._)._.+.~
