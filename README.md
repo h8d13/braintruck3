@@ -34,12 +34,14 @@ Same but with our new op types.
 fused-Horner build or a multiply off the value already in the cell (`115` is
 `+(()(`) rather than a from-zero `*`-build. 
 
-Same string in btf, 53 ops:
+You can test the round trip easily.
 
 ```shell
 ./out/txt2btf "Arch is the best!" | ./out/btf /dev/stdin
 Arch is the best!
 ```
+
+Some edge cases:
 
 `examples/lazy_zebra.btf` shows `!` printing `z` (byte 122), which `.` cannot reach.
 
