@@ -1,6 +1,5 @@
 #include "cell.hpp"
 #include "ir.hpp"
-#include "jit.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -19,7 +18,7 @@ constexpr ptr_t DEFAULT_TAPE_SIZE = 9999;
 // Compiled IR.  ADD/MOVE collapse runs of +/-/>/< into a single signed
 // delta.  JZ/JNZ store their matching op index directly in `arg`, so
 // no separate jump table is needed.
-// Op definition lives in ir.hpp (shared with jit.cpp).
+// Op definition lives in ir.hpp.
 
 static std::string strip_comments(const std::string& raw) {
     std::string out;
@@ -113,7 +112,7 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
             case '@': flush_add(); flush_move(); ops.push_back({Op::ANC_STORE, 0}); break;
             case '_': flush_add(); flush_move(); ops.push_back({Op::ANC_RECALL,0}); break;
             // Fused families: macro-expansions over existing IR, so the
-            // interpreter and JIT need no new op kinds.
+            // interpreter needs no new op kinds.
             case 'P': case 'M': case 'T': case 'D': case 'L': case 'R':
                 flush_add(); flush_move();
                 cell_step("+-*/()"[std::string_view("PMTDLR").find(c)]);
@@ -379,25 +378,6 @@ int main(int argc, char* argv[]) {
     if (!err.empty()) {
         std::cerr << err << '\n';
         return 1;
-    }
-
-    // BTF_JIT=1: compile IR to native x86_64 machine code and run that,
-    // but only when the IR is JIT-compatible.  SCAN, SIGN, and trit-string
-    // I/O ops fall through to the interpreter (memchr-backed scan, etc.).
-    if (const char* env = std::getenv("BTF_JIT"); env && env[0] != '0') {
-        if (BtfJit::can_compile(ops)) {
-            try {
-                BtfJit jit;
-                auto fn = jit.compile(ops);
-                std::vector<std::int8_t> tape(tape_size, 0);
-                fn(tape.data());
-                return 0;
-            } catch (const std::exception& e) {
-                std::cerr << "JIT failed: " << e.what() << '\n';
-                return 1;
-            }
-        }
-        // Fall through to interpreter for unsupported ops.
     }
 
     return run(ops, tape_size);

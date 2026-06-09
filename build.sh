@@ -3,7 +3,6 @@
 # BrainFuck (https://en.wikipedia.org/wiki/Brainfuck) 
 # Converted to balanced ternary in C++.
 # BrainTruck3. Uses +,0,- reps. Instead of the classic +, - representation.
-# This notably speeds up a lot of operations (MUL3 and DIV3 especially using JIT).
 #
 # ⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤
 # ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⠀⠀⠀⠀⠀⣀⣠⡤⠴⠶⠛⠛⢿⣶⣦⣄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -44,14 +43,11 @@ mkdir -p out
 echo "==> $CXX $CXXFLAGS -c src/cell.cpp -o out/cell.o"
 $CXX $CXXFLAGS -c src/cell.cpp -o out/cell.o
 
-echo "==> $CXX $CXXFLAGS -c src/jit.cpp -o out/jit.o"
-$CXX $CXXFLAGS -c src/jit.cpp -o out/jit.o
-
 echo "==> $CXX $CXXFLAGS -c src/btf.cpp -o out/btf.o"
 $CXX $CXXFLAGS -c src/btf.cpp -o out/btf.o
 
-echo "==> $CXX out/btf.o out/cell.o out/jit.o -o out/btf"
-$CXX out/btf.o out/cell.o out/jit.o -o out/btf
+echo "==> $CXX out/btf.o out/cell.o -o out/btf"
+$CXX out/btf.o out/cell.o -o out/btf
 
 echo "==> built out/btf"
 

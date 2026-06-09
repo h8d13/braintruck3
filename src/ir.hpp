@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// IR op shared between the interpreter (btf.cpp) and the JIT (jit.cpp).
+// IR op for the interpreter (btf.cpp).
 // Order MUST match the dispatch table in btf.cpp's run().
 
 struct Op {

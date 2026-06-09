@@ -78,13 +78,18 @@ for s in "Hi z" "café" "Arch"; do
     check "trit round-trip '$s'" "$s" "$got"
 done
 
-# --- JIT vs interpreter parity (loop + fused ops) -------------------------
-echo "== JIT/interpreter parity =="
-for prog in '+++[>+(<-]>.' '++++[>)<-]>+.' '+(()(.[-]' '+++[>(R<-]'; do
-    printf '%s' "$prog" > /tmp/btf_parity.btf
-    i=$("$BTF" /tmp/btf_parity.btf | xxd -p | tr -d '\n')
-    j=$(BTF_JIT=1 "$BTF" /tmp/btf_parity.btf | xxd -p | tr -d '\n')
-    check "parity '$prog'" "$i" "$j"
+# --- loop + fused op programs produce expected bytes -----------------------
+echo "== loop/fused op programs =="
+declare -A LOOP_PROGS=(
+    ['+++[>+(<-]>.']='34'
+    ['++++[>)<-]>+.']='d9'
+    ['+(()(.[-]']='73'
+    ['+++[>(R<-]']='0214c3'
+)
+for prog in "${!LOOP_PROGS[@]}"; do
+    printf '%s' "$prog" > /tmp/btf_loop.btf
+    got=$("$BTF" /tmp/btf_loop.btf | xxd -p | tr -d '\n')
+    check "loop '$prog'" "${LOOP_PROGS[$prog]}" "$got"
 done
 
 # --- example files all run -----------------------------------------------

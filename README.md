@@ -22,8 +22,8 @@ order `+ - * / ( )`:
 
 - `& = $ % { }`: step on the cell, then anchor = cell (park a hub for free).
 
-They lower to the same IR as their two-op spellings, so the interpreter, JIT
-and `[ ]` semantics are untouched; only source density changes.
+They lower to the same IR as their two-op spellings, so the interpreter and
+`[ ]` semantics are untouched; only source density changes.
 
 `+ - > < [ ] . ,` unchanged from original bf.
 
