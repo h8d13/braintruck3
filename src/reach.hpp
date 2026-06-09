@@ -49,6 +49,26 @@ inline std::string reach(int from, int to) {
     return path[idx(to)];  // unreachable: {+1,x3} alone already span the ring
 }
 
+// Fused-op glyph families, shared by the compiler (btf.cpp), disassembler and
+// translator. Index k = 0..5 selects the arithmetic step {+1, -1, x3, /3,
+// x3+1, x3-1}; the glyph fuses that step with a print or an anchor store, so
+// the IR stays unchanged and only source density improves.
+constexpr const char* FUSED_PRINT  = "PMTDLR";  // step on cell, then print
+constexpr const char* ANCREL_PRINT = "pmtdlr";  // cell = step(anchor), print
+constexpr const char* BUILD_STORE  = "&=$%{}";  // step on cell, anchor = cell
+// 'U' completes ANCREL_PRINT as the identity case: cell = anchor, print.
+
+inline int apply_step(int v, int k) {
+    switch (k) {
+        case 0:  return wrap(v + 1);
+        case 1:  return wrap(v - 1);
+        case 2:  return wrap(v * 3);
+        case 3:  return v / 3;
+        case 4:  return wrap(v * 3 + 1);
+        default: return wrap(v * 3 - 1);
+    }
+}
+
 // How to print byte b: the cell value to build, and the print op for it.
 //   0..121    cell == b,        '.'  (to_byte is the identity here)
 //   122..134  cell == b - 243,  '!'  (dead band: residue print, cells -121..-109)

@@ -1,3 +1,3 @@
-# txt2btf output for 'Arch is the best': register (~) holds the space, 97 ops
-+*+*-*-^>+*-*+*+*-.>+*+*+*-*.>+*+*-**.+++++.~+.++++++++++.~+.>+*+**-*-.-
---.~---.+++.>+*+*+*-*+.+.
+# 'Arch is the best!' without the fused families: exact-search floor over the
+# base ops (anchor @/_ = 115 hub, register ^/~ re-parked mid-run). 47 ops.
++(()(@()._-.*.-/^_+).+~._.+~.)./)./~^)._)._.+.~

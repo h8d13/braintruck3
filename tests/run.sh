@@ -30,7 +30,7 @@ done
 
 # --- txt2btf: text round-trips through the interpreter --------------------
 echo "== txt2btf round-trip =="
-for s in "Arch is the best" "Hello, World!" "lazy zebra" "café" "hi!" "12.5%" "a"; do
+for s in "Arch is the best!" "Hello, World!" "lazy zebra" "café" "hi!" "12.5%" "a" 'PMTDLR &={}'; do
     got=$(printf '%s' "$s" | "$T2B" | "$BTF" /dev/stdin)
     check "txt2btf '$s'" "$s" "$got"
 done
@@ -61,6 +61,11 @@ echo "== btf-dis annotations =="
 dis=$("$DIS" examples/cafe.btf)
 check "dis traces build 'c'"   "yes" "$(echo "$dis" | grep -q "print 'c'" && echo yes)"
 check "dis shows UTF-8 195"    "yes" "$(echo "$dis" | grep -q "print 195" && echo yes)"
+# fused families: step+store, step+print, anchor-relative print
+disf=$("$DIS" examples/arch_shorter.btf)
+check "dis fused store anchor" "yes" "$(echo "$disf" | grep -q "anchor = cell (115)" && echo yes)"
+check "dis fused print 'A'"    "yes" "$(echo "$disf" | grep -q "cell\*3-1, print 'A'" && echo yes)"
+check "dis anchor-rel 'r'"     "yes" "$(echo "$disf" | grep -q "anchor-1, print 'r'" && echo yes)"
 # loop program: degrades gracefully, no crash, shows the loop header
 disl=$(printf '+++[>+(<-]>.' | "$DIS" -)
 check "dis loop header"        "yes" "$(echo "$disl" | grep -q "while cell != 0:" && echo yes)"
@@ -75,7 +80,7 @@ done
 
 # --- JIT vs interpreter parity (loop + fused ops) -------------------------
 echo "== JIT/interpreter parity =="
-for prog in '+++[>+(<-]>.' '++++[>)<-]>+.' '+(()(.[-]'; do
+for prog in '+++[>+(<-]>.' '++++[>)<-]>+.' '+(()(.[-]' '+++[>(R<-]'; do
     printf '%s' "$prog" > /tmp/btf_parity.btf
     i=$("$BTF" /tmp/btf_parity.btf | xxd -p | tr -d '\n')
     j=$(BTF_JIT=1 "$BTF" /tmp/btf_parity.btf | xxd -p | tr -d '\n')

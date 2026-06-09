@@ -79,6 +79,17 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
         if (move_run != 0) ops.push_back({Op::MOVE, move_run});
         move_run = 0;
     };
+    // One arithmetic step for the fused glyph families (g in "+-*/()").
+    auto cell_step = [&](char g) {
+        switch (g) {
+            case '+': emit_cell(Op::ADD, +1); break;
+            case '-': emit_cell(Op::ADD, -1); break;
+            case '*': emit_cell(Op::MUL3);     break;
+            case '/': emit_cell(Op::DIV3);     break;
+            case '(': emit_cell(Op::MUL3_INC); break;
+            case ')': emit_cell(Op::MUL3_DEC); break;
+        }
+    };
 
     for (std::size_t i = 0; i < src.size(); ++i) {
         char c = src[i];
@@ -101,6 +112,29 @@ static std::vector<Op> compile(const std::string& src, std::string& err) {
             case '~': flush_add(); flush_move(); ops.push_back({Op::REG_PUT,   0}); break;
             case '@': flush_add(); flush_move(); ops.push_back({Op::ANC_STORE, 0}); break;
             case '_': flush_add(); flush_move(); ops.push_back({Op::ANC_RECALL,0}); break;
+            // Fused families: macro-expansions over existing IR, so the
+            // interpreter and JIT need no new op kinds.
+            case 'P': case 'M': case 'T': case 'D': case 'L': case 'R':
+                flush_add(); flush_move();
+                cell_step("+-*/()"[std::string_view("PMTDLR").find(c)]);
+                ops.push_back({Op::PUTC, 0});
+                break;
+            case 'U':
+                flush_add(); flush_move();
+                ops.push_back({Op::ANC_RECALL, 0});
+                ops.push_back({Op::PUTC, 0});
+                break;
+            case 'p': case 'm': case 't': case 'd': case 'l': case 'r':
+                flush_add(); flush_move();
+                ops.push_back({Op::ANC_RECALL, 0});
+                cell_step("+-*/()"[std::string_view("pmtdlr").find(c)]);
+                ops.push_back({Op::PUTC, 0});
+                break;
+            case '&': case '=': case '$': case '%': case '{': case '}':
+                flush_add(); flush_move();
+                cell_step("+-*/()"[std::string_view("&=$%{}").find(c)]);
+                ops.push_back({Op::ANC_STORE, 0});
+                break;
             case '[':
                 flush_add(); flush_move();
                 bracket_stack.push(ops.size());

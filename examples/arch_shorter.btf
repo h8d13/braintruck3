@@ -1,3 +1,4 @@
-# txt2btf output for 'Arch is the best!': exact layered BFS, anchor (@/_)=115
-# hub, constant (^/~) re-stored mid-run (space, then '!'), 47 ops
-+(()(@()._-.*.-/^_+).+~._.+~.)./)./~^)._)._.+.~
+# txt2btf output for 'Arch is the best!' with the fused families: '{' parks
+# the 115 hub as a build byproduct, lowercase ops print straight off the
+# anchor, '^' re-parks the register mid-run (space, then '!'). 30 ops.
++((){(RmT-/^_+R~PU~PRr/~^RrUP~

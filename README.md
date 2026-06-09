@@ -13,6 +13,18 @@ registers:
 - constant (`^` store, `~` reprint as byte, cell untouched): a frequent char.
 - anchor (`@` store, `_` recall into cell): a build base a short reach away.
 
+Fused families collapse a step and its print/store into one glyph, in the
+order `+ - * / ( )`:
+- `P M T D L R`: step on the cell, then print it (`R` = `).` in one op).
+- `U` / `p m t d l r`: cell = anchor (stepped for lowercase), then print.
+
+**P**lus, **M**inus, **T**imes, **D**iv, **L**eft, **R**right (horners)
+
+- `& = $ % { }`: step on the cell, then anchor = cell (park a hub for free).
+
+They lower to the same IR as their two-op spellings, so the interpreter, JIT
+and `[ ]` semantics are untouched; only source density changes.
+
 `+ - > < [ ] . ,` unchanged from original bf.
 
 ## Example ([from](https://wiki.archlinux.org/title/Arch_is_the_best))
@@ -25,19 +37,25 @@ Hand-written brainfuck, "Arch is the best!", 203 ops:
 >>+.++++++++++.<<.>>+.------------.---.<<.>>---.
 +++.++++++++++++++.+.<<+.[-]++++++++++.
 ```
-Same but with our new op types, 47 ops:
+Same with the base btf ops, 47 ops (`examples/arch_short.btf`):
 ```brainfuck
 +(()(@()._-.*.-/^_+).+~._.+~.)./)./~^)._)._.+.~
 ```
 
-`txt2btf` finds this by an exact layered BFS over interpreter state (chars
-printed, cell, anchor, constant register), so it is a shortest program, not a
-heuristic: 17 of the 47 ops are the prints themselves. A letter lands as a
-fused-Horner build or a multiply off the value already in the cell (`115` is
-`+(()(`), the anchor parks the `s`/`t`/`h` cluster, and the constant register
-is re-stored mid-run (space, then `!`) when a park value floats by as a `/`
-byproduct. Long inputs are chunked to a state budget, carrying the running
-state across seams.
+With the fused families, 30 ops (`examples/arch_shorter.btf`):
+```brainfuck
++((){(RmT-/^_+R~PU~PRr/~^RrUP~
+```
+17 of those 30 ops are prints themselves 
+
+`txt2btf` finds these by an exact layered BFS over interpreter state (chars
+printed, cell, anchor, constant register), so each is a shortest program, not
+a heuristic: 17 of the 30 ops are the prints themselves. A letter lands as a
+fused-Horner build or a multiply off the value already in the cell, `{` parks
+the 115 hub as a build byproduct, the lowercase ops print `r`/`e` straight
+off that anchor, and the constant register is re-stored mid-run (space, then
+`!`) when a park value floats by. Long inputs are chunked to a state budget,
+carrying the running state across seams.
 
 You can test the round trip easily.
 

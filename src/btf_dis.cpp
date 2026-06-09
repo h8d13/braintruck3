@@ -119,7 +119,33 @@ int main(int argc, char** argv) {
             case '_': t.cur = t.anc; line("_", "cell = anchor  -> " + t.val(t.cur)); break;
             case '[': line("[", "while cell != 0:"); t.drop(); break;
             case ']': line("]", "end loop"); break;
-            default: break;  // whitespace / unknown
+            case 'U':
+                t.cur = t.anc;
+                line("U", "cell = anchor, print " +
+                          (t.cur ? show_byte(to_byte(*t.cur)) : "cell"));
+                break;
+            default: {
+                static const char* STEP[6] = {"+1", "-1", "*3", "/3", "*3+1", "*3-1"};
+                std::string g(1, c);
+                std::size_t k;
+                if ((k = std::string(btf::FUSED_PRINT).find(c)) != std::string::npos) {
+                    if (t.cur) t.cur = btf::apply_step(*t.cur, static_cast<int>(k));
+                    line(g, "cell = cell" + std::string(STEP[k]) + ", print " +
+                            (t.cur ? show_byte(to_byte(*t.cur)) : "cell"));
+                } else if ((k = std::string(btf::ANCREL_PRINT).find(c)) != std::string::npos) {
+                    t.cur = t.anc ? std::optional<int>(
+                                btf::apply_step(*t.anc, static_cast<int>(k)))
+                                  : std::nullopt;
+                    line(g, "cell = anchor" + std::string(STEP[k]) + ", print " +
+                            (t.cur ? show_byte(to_byte(*t.cur)) : "cell"));
+                } else if ((k = std::string(btf::BUILD_STORE).find(c)) != std::string::npos) {
+                    if (t.cur) t.cur = btf::apply_step(*t.cur, static_cast<int>(k));
+                    t.anc = t.cur;
+                    line(g, "cell = cell" + std::string(STEP[k]) +
+                            ", anchor = cell (" + t.val(t.cur) + ")");
+                }
+                break;  // whitespace / unknown
+            }
         }
     }
     return 0;

@@ -10,10 +10,13 @@
 //
 // Modeled ops: cell arithmetic (+ - * / ( )), '>' onto a fresh cell (the
 // pointer only ever moves right, so the target cell is always 0), '@'/'_'
-// anchor store/recall, '^'/'~' constant store/print, '.'/'!' prints.
-// Candidate registers are restricted to values the program could actually
-// use: anchors to the encode-targets of the text's chars, constants to its
-// printable bytes. '?' and loops never pay for themselves on straight text.
+// anchor store/recall, '^'/'~' constant store/print, '.'/'!' prints, and the
+// fused families (step+print P M T D L R / U p m t d l r, step+store
+// & = $ % { }) which collapse a build step and its print or anchor store
+// into one glyph. Candidate registers are restricted to values the program
+// could actually use: anchors to the encode-targets of the text's chars plus
+// their one-step preimage hubs, constants to its printable bytes. '?' and
+// loops never pay for themselves on straight text.
 //
 // Long inputs are split into chunks sized to a state budget; the running
 // (cell, anchor, constant) state carries across the boundary, so only the
@@ -37,9 +40,21 @@ using btf::MAXV;
 namespace {
 
 constexpr int  ANC_NONE   = 999;        // anchor register empty
-constexpr long MAX_STATES = 16L << 20;  // per-chunk search budget (~100 MB)
+constexpr long MAX_STATES = 48L << 20;  // per-chunk search budget (~300 MB)
 
 bool dead_band(int b) { return b >= 122 && b <= 134; }  // '~' can't print these
+
+// Anchor candidates for one target: the target itself plus every value one
+// arithmetic step away from it. A store can then park a hub that reaches
+// several targets via single fused ops (e.g. 113 serves 'r' via p and 'a'
+// via l), which target-only candidates would miss.
+template <typename F>
+void for_anchor_candidates(int target, F&& f) {
+    f(target);
+    for (int v = -MAXV; v <= MAXV; ++v)
+        for (int k = 0; k < 6; ++k)
+            if (btf::apply_step(v, k) == target) f(v);
+}
 
 // Exact shortest program printing `text` from entry state (cell, anc, con);
 // all three are updated to the exit state for the next chunk.
@@ -62,7 +77,7 @@ std::string solve(const std::string& text, int& cell, int& anc, int& con) {
     add_anc(anc);
     add_con(con);
     for (unsigned char ch : text) {
-        add_anc(encode(ch).target);
+        for_anchor_candidates(encode(ch).target, add_anc);
         add_con(ch);
     }
     const int A = static_cast<int>(ancs.size());
@@ -123,11 +138,28 @@ std::string solve(const std::string& text, int& cell, int& anc, int& con) {
         if (anc_at[c + MAXV] >= 0)  push(id(i, c, anc_at[c + MAXV], ri), '@');
         if (ai > 0)                 push(id(i, ancs[ai], ai, ri), '_');
         if (park_at[c + MAXV] >= 0) push(id(i, c, ai, park_at[c + MAXV]), '^');
+        for (int k = 0; k < 6; ++k) {            // fused step + anchor store
+            const int v = btf::apply_step(c, k);
+            if (anc_at[v + MAXV] >= 0)
+                push(id(i, v, anc_at[v + MAXV], ri), btf::BUILD_STORE[k]);
+        }
 
         const int b = static_cast<unsigned char>(text[i]);
         const btf::Enc e = encode(b);
         if (c == e.target)              push(id(i + 1, c, ai, ri), e.term);
         if (ri > 0 && cons[ri] == b)    push(id(i + 1, c, ai, ri), '~');
+        if (e.term == '.') {                     // fused prints lower to PUTC
+            for (int k = 0; k < 6; ++k)          // step on cell, print
+                if (btf::apply_step(c, k) == e.target)
+                    push(id(i + 1, e.target, ai, ri), btf::FUSED_PRINT[k]);
+            if (ai > 0) {
+                if (ancs[ai] == e.target)        // recall + print
+                    push(id(i + 1, e.target, ai, ri), 'U');
+                for (int k = 0; k < 6; ++k)      // step on anchor, print
+                    if (btf::apply_step(ancs[ai], k) == e.target)
+                        push(id(i + 1, e.target, ai, ri), btf::ANCREL_PRINT[k]);
+            }
+        }
     }
 
     // unreachable: '+' alone spans the ring, so every print is reachable
@@ -156,14 +188,14 @@ std::size_t chunk_len(const std::string& text, std::size_t pos, int anc, int con
     std::size_t len = 0;
     while (pos + len < text.size()) {
         const int b = static_cast<unsigned char>(text[pos + len]);
-        const int t = encode(b).target + MAXV;
-        long a = A + !sa[t], r = R + (!dead_band(b) && !sc[b]);
+        for_anchor_candidates(encode(b).target, [&](int v) {
+            if (!sa[v + MAXV]) { sa[v + MAXV] = true; ++A; }
+        });
+        long r = R + (!dead_band(b) && !sc[b]);
         if (len > 0 &&
-            static_cast<long>(len + 2) * btf::MOD * a * r > MAX_STATES)
+            static_cast<long>(len + 2) * btf::MOD * A * r > MAX_STATES)
             break;
-        sa[t] = true;
         if (!dead_band(b)) sc[b] = true;
-        A = a;
         R = r;
         ++len;
     }
