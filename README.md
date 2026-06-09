@@ -26,7 +26,7 @@ Hand-written brainfuck, "Arch is the best!", 203 ops:
 +++.++++++++++++++.+.<<+.[-]++++++++++.
 ```
 Same but with our new op types.
-```
+```brainfuck
 +(()(@>+())^_()._-.*._+).~+._.~+.)./).~/)._)._.+.-)/.
 ```
 
