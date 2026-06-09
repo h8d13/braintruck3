@@ -1,3 +1,2 @@
-# txt2btf output for 'Arch is the best': register (~)=space + anchor (_)=114 base, 83 ops
-+*+*+*-*@>+*+*-*-^>+*-*+*+*-._.>+*+*-**.+++++.~+._+.~+.>+*+**-*-.---.~--
--.+++._+.+.
+# txt2btf output for 'Arch is the best': register (~)=space + anchor (@/_)=115 base, 49 ops
++(()(@>+())^_()._-.*._+).~+._.~+.)./).~/)._)._.+.

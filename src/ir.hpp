@@ -25,7 +25,11 @@ struct Op {
         // the cell, then a small diff reaches a nearby value, cheaper than a
         // full Horner build for a cluster of close characters.
         ANC_STORE,  // @  : A = current cell
-        ANC_RECALL  // _  : current cell = A
+        ANC_RECALL, // _  : current cell = A
+        // Fused Horner step: one trit shift plus its sign in a single op, so a
+        // balanced-ternary build costs ~one op per trit instead of '*' + '+'/'-'.
+        MUL3_INC,   // (  : cell = cell*3 + 1
+        MUL3_DEC    // )  : cell = cell*3 - 1
     } kind;
     std::int32_t arg;
 };

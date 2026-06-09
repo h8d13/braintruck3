@@ -66,6 +66,7 @@ bool BtfJit::can_compile(const std::vector<Op>& ops) {
             case Op::ANC_STORE: case Op::ANC_RECALL:
                 return false;
             case Op::MUL3: case Op::DIV3:
+            case Op::MUL3_INC: case Op::MUL3_DEC:
                 has_arith = true;
                 break;
             case Op::JZ:
@@ -210,6 +211,18 @@ BtfJit::JitFn BtfJit::compile(const std::vector<Op>& ops) {
             case Op::MUL3: {
                 ensure_loaded();
                 emit({0x8D, 0x04, 0x40});      // lea eax, [eax + eax*2]
+                wrap_eax();
+                cell_dirty = true;
+                break;
+            }
+            case Op::MUL3_INC:
+            case Op::MUL3_DEC: {
+                // x3 then +-1 in one op.  |eax| <= 364 after both, still within
+                // wrap_eax's single-correction range, so one wrap closes it.
+                ensure_loaded();
+                emit({0x8D, 0x04, 0x40});      // lea eax, [eax + eax*2]
+                std::uint8_t k = op.kind == Op::MUL3_INC ? 0x01 : 0xFF;
+                emit({0x83, 0xC0, k});         // add eax, +-1
                 wrap_eax();
                 cell_dirty = true;
                 break;
