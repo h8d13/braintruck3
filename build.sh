@@ -34,7 +34,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 CXX="${CXX:-g++}"
-CXXFLAGS="${CXXFLAGS:--std=c++20 -O2 -Wall -Wextra -Wpedantic}"
+# -O3/-flto: measured on the interpreter fixtures + txt2btf search; the
+# computed-goto interpreter is flat across O2/O3 but the search gains ~14%.
+CXXFLAGS="${CXXFLAGS:--std=c++20 -O3 -flto -Wall -Wextra -Wpedantic}"
 
 mkdir -p out
 
@@ -46,8 +48,8 @@ $CXX $CXXFLAGS -c src/cell.cpp -o out/cell.o
 echo "==> $CXX $CXXFLAGS -c src/btf.cpp -o out/btf.o"
 $CXX $CXXFLAGS -c src/btf.cpp -o out/btf.o
 
-echo "==> $CXX out/btf.o out/cell.o -o out/btf"
-$CXX out/btf.o out/cell.o -o out/btf
+echo "==> $CXX $CXXFLAGS out/btf.o out/cell.o -o out/btf"
+$CXX $CXXFLAGS out/btf.o out/cell.o -o out/btf
 
 echo "==> built out/btf"
 
